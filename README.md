@@ -14,7 +14,9 @@ A drum machine, an instrument sequencer and a little song arranger, living in on
 
 **Instruments** — up to 8 tracks, each with its own instrument, octave, note length, level and TONE. Click cells in the note grid to place notes; a column can hold as many as you like, so chords work. Notes are locked to the KEY and SCALE at the top, so nothing lands wrong. Notes belonging to the other tracks show as faint ghosts, so parts can be written against each other.
 
-**Everything else** — SWING pushes off-beat 16ths late, SPACE is the reverb, ECHO is a tempo-synced ping-pong delay, RANDOM rolls a new version of the current pattern, COPY LINK puts the whole song in the URL, EXPORT WAV renders 1–8 passes of the chain to a file.
+**Feel** — SWING pushes off-beat 16ths late, HUMAN jitters timing and velocity so nothing lands perfectly on the grid, and each track has an ARP that turns a column of notes into an up, down or strummed figure.
+
+**Everything else** — SPACE is the reverb, ECHO is a tempo-synced ping-pong delay, RANDOM rolls a new version of the current pattern, COPY LINK puts the whole song in the URL, EXPORT WAV renders 1–8 passes of the chain to a file, and SAVE keeps up to 20 named songs in the browser.
 
 **Keys** — space plays and stops, `1`–`4` pick a pattern, ctrl+Z / ctrl+shift+Z undo and redo. Everything autosaves to localStorage.
 
@@ -47,7 +49,7 @@ They are honest synth approximations, not sampled recordings — a synthesised v
 - **Loudness** — every instrument carries a measured trim so switching between them does not jump in volume, and the mix runs through a fixed headroom gain into a compressor.
 - **Effects** — reverb is a convolver fed by a generated noise impulse; echo is a dotted-eighth delay pair, left feeding right and right feeding back through a lowpass so the tail darkens and alternates channels. Both are sends, with drums going in quieter than instruments.
 - **Export** rebuilds the identical graph inside an `OfflineAudioContext`, renders faster than realtime and encodes 16-bit stereo PCM by hand.
-- **Songs are a string**: `v3|bpm|swing|key|scale|reverb|chain|kit|patterns|echo|drumkit`, with each pattern's notes packed as 12-bit hex masks. That same string is the URL hash, the localStorage value and the undo history. Old `v1` and `v2` links still load.
+- **Songs are a string**: `v3|bpm|swing|key|scale|reverb|chain|kit|patterns|echo|drumkit|humanize`, with each pattern's notes packed as 12-bit hex masks. That same string is the URL hash, the localStorage value and the undo history. Old `v1` and `v2` links still load.
 
 ## Run locally
 

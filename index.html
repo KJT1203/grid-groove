@@ -58,6 +58,8 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .tab.muted{opacity:.45;text-decoration:line-through}
 .tab.live{border-color:var(--cool);color:var(--cool)}
 .tab.empty{opacity:.5}
+#sname{background:#0f131d;color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:7px 10px;font:inherit;font-size:11px;width:130px}
 #chain{background:#0f131d;color:var(--text);border:1px solid var(--line);border-radius:5px;
   padding:5px 8px;font:inherit;font-size:11px;letter-spacing:3px;width:110px;text-transform:uppercase}
 .tctl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
@@ -118,6 +120,10 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   <button id="share">COPY LINK</button>
   <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> BARS</label>
   <button id="wav">EXPORT WAV</button>
+  <input id="sname" placeholder="song name" maxlength="24">
+  <button id="ssave">SAVE</button>
+  <select id="slots"></select>
+  <button id="sdel">DELETE</button>
   <span id="msg"></span>
   <span style="color:var(--dim);font-size:10px;letter-spacing:1px">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo &middot; SHIFT+click M to solo</span>
 </footer>
@@ -1268,6 +1274,38 @@ const PRESETS={
     '0011')
 };
 
+/* ---------- saved songs ---------- */
+const LIB='gridgroove.lib';
+const readLib = () => { try{ return JSON.parse(localStorage.getItem(LIB)) || []; }catch(e){ return []; } };
+const writeLib = l => { try{ localStorage.setItem(LIB, JSON.stringify(l)); }catch(e){ msg('storage full'); } };
+function buildSlots(sel){
+  const lib=readLib();
+  $('slots').innerHTML = '<option value="">'+(lib.length?'load a song...':'nothing saved')+'</option>'+
+    lib.map((e,i)=>'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+
+      e.n.replace(/[<>&]/g,'')+'</option>').join('');
+}
+$('ssave').onclick = ()=>{
+  const name = ($('sname').value || 'song '+(readLib().length+1)).trim().slice(0,24);
+  const lib=readLib(), at=lib.findIndex(e=>e.n===name);
+  const entry={n:name,s:encode(state)};
+  if(at>=0) lib[at]=entry; else lib.push(entry);
+  if(lib.length>20) lib.shift();
+  writeLib(lib); buildSlots(lib.findIndex(e=>e.n===name));
+  $('sname').value=name; msg('saved "'+name+'"');
+};
+$('slots').onchange = e=>{
+  const entry = readLib()[+e.target.value];
+  if(!entry) return;
+  load(entry.s); $('sname').value=entry.n; msg('loaded "'+entry.n+'"');
+};
+$('sdel').onclick = ()=>{
+  const i=+$('slots').value, lib=readLib();
+  if(!lib[i]) return msg('pick a song first');
+  const gone=lib.splice(i,1)[0];
+  writeLib(lib); buildSlots(); msg('deleted "'+gone.n+'"');
+};
+buildSlots();
+
 /* ---------- boot ---------- */
 $('key').innerHTML = KEYS.map((k,i)=>'<option value="'+i+'">'+k+'</option>').join('');
 $('scale').innerHTML = SCALES.map((s,i)=>'<option value="'+i+'">'+s.nm+'</option>').join('');
@@ -1327,6 +1365,13 @@ if(location.search.indexOf('test=1')>-1){
   if(encode(state)===before) throw new Error('test edit did nothing');
   undo();
   eq(encode(state),before,'undo restores the previous state');
+  const libBefore=localStorage.getItem(LIB);
+  $('sname').value='__selftest__'; $('ssave').click();
+  eq(readLib().some(e=>e.n==='__selftest__'&&e.s===encode(state)),true,'a song can be saved');
+  $('slots').value=String(readLib().findIndex(e=>e.n==='__selftest__')); $('sdel').click();
+  eq(readLib().some(e=>e.n==='__selftest__'),false,'and deleted again');
+  if(libBefore===null) localStorage.removeItem(LIB); else localStorage.setItem(LIB,libBefore);
+  buildSlots(); $('sname').value='';
   restoring=true; load(snapshot); restoring=false; history.length=0; future.length=0;
   eq(encode(state),snapshot,'the song is left exactly as it was found');
   ensureAudio();
