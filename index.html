@@ -71,6 +71,7 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     <label>BPM <input id="bpm" type="range" min="60" max="180" value="112"><output id="bpmv">112</output></label>
     <label>SWING <input id="swing" type="range" min="0" max="60" value="16"><output id="swingv">16</output></label>
     <label>SPACE <input id="wet" type="range" min="0" max="100" value="28"><output id="wetv">28</output></label>
+    <label>ECHO <input id="echo" type="range" min="0" max="100" value="18"><output id="echov">18</output></label>
     <label>VOL <input id="vol" type="range" min="0" max="100" value="80"><output id="volv">80</output></label>
     <label>KEY <select id="key"></select></label>
     <label>SCALE <select id="scale"></select></label>
@@ -101,6 +102,7 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> BARS</label>
   <button id="wav">EXPORT WAV</button>
   <span id="msg"></span>
+  <span style="color:var(--dim);font-size:10px;letter-spacing:1px">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo</span>
 </footer>
 
 <script>
@@ -142,7 +144,7 @@ const blankPat = (nTracks) => ({
   steps:Array.from({length:nTracks},()=>new Array(STEPS).fill(0))
 });
 const blank = () => ({
-  bpm:112, swing:16, vol:80, wet:28, key:0, scale:0, chain:[0],
+  bpm:112, swing:16, vol:80, wet:28, echo:18, key:0, scale:0, chain:[0],
   mute:Object.fromEntries(DRUMS.map(d=>[d.id,0])),
   gain:Object.fromEntries(DRUMS.map(d=>[d.id,0.8])),
   tracks:[blankTrack('bass',-1,1.5), blankTrack('piano',0,1), blankTrack('strings',1,4)],
@@ -184,7 +186,7 @@ function encode(s){
   });
   const empty = EMPTY_LANE + '~' + s.tracks.map(()=>'000'.repeat(STEPS)).join(';');
   while(pats.length>1 && pats[pats.length-1]===empty) pats.pop();
-  return ['v3',s.bpm,s.swing,s.key,s.scale,s.wet,s.chain.join(''),kit,pats.join('/')].join('|');
+  return ['v3',s.bpm,s.swing,s.key,s.scale,s.wet,s.chain.join(''),kit,pats.join('/'),s.echo].join('|');
 }
 function decode(str){
   const p = String(str).split('|');
@@ -197,6 +199,7 @@ function decode(str){
   s.key   = clamp(+p[3],0,11,0);
   s.scale = clamp(+p[4],0,SCALES.length-1,0);
   s.wet   = clamp(+p[5],0,100,28);
+  s.echo  = clamp(+p[9],0,100,18);
   s.chain = readChain(p[6]);
   s.tracks = p[7].split(';').filter(Boolean).map(readTrack);
   if(!s.tracks.length) s.tracks = blank().tracks;
@@ -266,6 +269,12 @@ function upgradeV2(p){
 
 /* ---------- audio graph ---------- */
 let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], noiseBuf, ksCache={};
+let dlyL, dlyR, echoGain, sendEcho, sendEchoD;
+function setEchoTime(){
+  if(!dlyL) return;
+  const t = 60/state.bpm*0.75;              // dotted eighth
+  dlyL.delayTime.value = dlyR.delayTime.value = t;
+}
 function ensureAudio(){
   if(ac) return;
   buildGraph(new (window.AudioContext||window.webkitAudioContext)());
@@ -284,9 +293,22 @@ function buildGraph(ctx){
   sendMel  = ac.createGain(); sendMel.gain.value = 1;    sendMel.connect(verb);
   sendDrum = ac.createGain(); sendDrum.gain.value = 0.3; sendDrum.connect(verb);
 
+  // ping-pong echo: left tap feeds the right, the right feeds back into the left
+  dlyL = ac.createDelay(2); dlyR = ac.createDelay(2);
+  const fb = ac.createGain(); fb.gain.value = 0.38;
+  const fbLP = ac.createBiquadFilter(); fbLP.type='lowpass'; fbLP.frequency.value=2600;
+  const merge = ac.createChannelMerger(2);
+  echoGain = ac.createGain(); echoGain.gain.value = state.echo/100;
+  dlyL.connect(merge,0,0); dlyL.connect(dlyR); dlyR.connect(merge,0,1);
+  dlyR.connect(fbLP).connect(fb).connect(dlyL);
+  merge.connect(echoGain).connect(master);
+  sendEcho = ac.createGain(); sendEcho.gain.value = 1;    sendEcho.connect(dlyL);
+  sendEchoD = ac.createGain(); sendEchoD.gain.value = 0.12; sendEchoD.connect(dlyL);
+  setEchoTime();
+
   DRUMS.forEach(d=>{
     const g=ac.createGain(); g.gain.value=state.gain[d.id];
-    g.connect(master); g.connect(sendDrum); laneGain[d.id]=g;
+    g.connect(master); g.connect(sendDrum); g.connect(sendEchoD); laneGain[d.id]=g;
   });
 
   noiseBuf = ac.createBuffer(1, ac.sampleRate*2, ac.sampleRate);
@@ -298,7 +320,7 @@ function syncTrackGains(){
   if(!ac) return;
   state.tracks.forEach((tr,i)=>{
     if(!trackGain[i]){
-      const g=ac.createGain(); g.connect(master); g.connect(sendMel); trackGain[i]=g;
+      const g=ac.createGain(); g.connect(master); g.connect(sendMel); g.connect(sendEcho); trackGain[i]=g;
     }
     trackGain[i].gain.value = tr.mute ? 0 : tr.vol;
   });
@@ -675,8 +697,9 @@ async function renderWav(bars){
   const sd = 60/state.bpm/4, tail = 2.5;
   const off = new OfflineAudioContext(2, Math.ceil(44100*(bars*STEPS*sd + tail)), 44100);
   const live = {ac:ac,master:master,wetGain:wetGain,sendMel:sendMel,sendDrum:sendDrum,
-                laneGain:laneGain,trackGain:trackGain,noiseBuf:noiseBuf,ksCache:ksCache};
-  laneGain={}; trackGain=[]; ksCache={};
+                laneGain:laneGain,trackGain:trackGain,noiseBuf:noiseBuf,ksCache:ksCache,
+                dlyL:dlyL,dlyR:dlyR,echoGain:echoGain,sendEcho:sendEcho,sendEchoD:sendEchoD};
+  laneGain={}; trackGain=[]; ksCache={}; dlyL=null;
   buildGraph(off);
   for(let b=0;b<bars;b++){
     const pt = state.pats[state.chain[b % state.chain.length]] || state.pats[0];
@@ -688,6 +711,8 @@ async function renderWav(bars){
   let rendered;
   try{ rendered = await off.startRendering(); }
   finally{
+    dlyL=live.dlyL; dlyR=live.dlyR; echoGain=live.echoGain;
+    sendEcho=live.sendEcho; sendEchoD=live.sendEchoD;
     ac=live.ac; master=live.master; wetGain=live.wetGain; sendMel=live.sendMel;
     sendDrum=live.sendDrum; laneGain=live.laneGain; trackGain=live.trackGain;
     noiseBuf=live.noiseBuf; ksCache=live.ksCache;
@@ -807,7 +832,29 @@ function paint(){
   });
   save();
 }
-function save(){ try{ localStorage.setItem('gridgroove', encode(state)); }catch(e){} }
+let history=[], future=[], lastSaved=null, restoring=false;
+function save(){
+  const str = encode(state);
+  if(lastSaved!==null && str!==lastSaved && !restoring){
+    history.push(lastSaved);
+    if(history.length>60) history.shift();
+    future.length=0;
+  }
+  lastSaved = str;
+  try{ localStorage.setItem('gridgroove', str); }catch(e){}
+}
+function undo(){
+  if(!history.length) return msg('nothing to undo');
+  future.push(encode(state));
+  restoring=true; load(history.pop()); restoring=false;
+  lastSaved=encode(state); msg('undo');
+}
+function redo(){
+  if(!future.length) return msg('nothing to redo');
+  history.push(encode(state));
+  restoring=true; load(future.pop()); restoring=false;
+  lastSaved=encode(state); msg('redo');
+}
 const $=id=>document.getElementById(id);
 function msg(t){ $('msg').textContent=t; setTimeout(()=>{ $('msg').textContent=''; },1800); }
 
@@ -881,7 +928,8 @@ document.body.addEventListener('change',e=>{
 });
 
 $('play').onclick = ()=> playing?stop():start();
-$('bpm').oninput = e=>{ state.bpm=+e.target.value; $('bpmv').textContent=state.bpm; save(); };
+$('bpm').oninput = e=>{ state.bpm=+e.target.value; $('bpmv').textContent=state.bpm; setEchoTime(); save(); };
+$('echo').oninput = e=>{ state.echo=+e.target.value; $('echov').textContent=state.echo; ensureAudio(); echoGain.gain.value=state.echo/100; save(); };
 $('swing').oninput = e=>{ state.swing=+e.target.value; $('swingv').textContent=state.swing; save(); };
 $('vol').oninput = e=>{ state.vol=+e.target.value; $('volv').textContent=state.vol; ensureAudio(); master.gain.value=state.vol/100; save(); };
 $('wet').oninput = e=>{ state.wet=+e.target.value; $('wetv').textContent=state.wet; ensureAudio(); wetGain.gain.value=state.wet/100; save(); };
@@ -914,7 +962,14 @@ $('wav').onclick = async e=>{
   btn.disabled=false; btn.textContent='EXPORT WAV';
 };
 addEventListener('keydown',e=>{
-  if(e.code==='Space' && e.target===document.body){ e.preventDefault(); playing?stop():start(); }
+  if(e.target!==document.body) return;              // never steal keys from the chain box
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
+    e.preventDefault(); e.shiftKey ? redo() : undo(); return;
+  }
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
+  if(e.code==='Space'){ e.preventDefault(); playing?stop():start(); return; }
+  const n = '1234'.indexOf(e.key);
+  if(n>=0 && !e.ctrlKey && !e.metaKey){ pat=n; buildSong(); buildMelodic(); paint(); }
 });
 
 function load(str){
@@ -929,9 +984,10 @@ function load(str){
   $('bpm').value=state.bpm;     $('bpmv').textContent=state.bpm;
   $('swing').value=state.swing; $('swingv').textContent=state.swing;
   $('wet').value=state.wet;     $('wetv').textContent=state.wet;
+  $('echo').value=state.echo;   $('echov').textContent=state.echo;
   $('key').value=state.key;     $('scale').value=state.scale;
   syncPatternTracks();
-  if(ac) wetGain.gain.value=state.wet/100;
+  if(ac){ wetGain.gain.value=state.wet/100; echoGain.gain.value=state.echo/100; setEchoTime(); }
   build();
   if(wasPlaying){ stop(); start(); }
 }
@@ -1061,6 +1117,7 @@ if(location.search.indexOf('test=1')>-1){
   eq(readChain('0012'),[0,0,1,2],'chain parses');
   eq(readChain('zz'),[0],'bad chain falls back to A');
   eq(decode(PRESETS.house).chain,[0,0,0,1],'preset chain');
+  eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).echo,18,'v3 without echo field defaults');
   const t=blankTrack('piano',0,1);
   eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
   eq(hex3(0xfff),'fff','mask packs');
@@ -1068,6 +1125,11 @@ if(location.search.indexOf('test=1')>-1){
   state.bpm=120; state.swing=50;
   eq(+stepTime(0,1).toFixed(4), +(stepDur()*0.5).toFixed(4),'swing offsets odd steps');
   eq(stepTime(0,2),0,'even steps stay on grid');
+  const before=encode(state);
+  P().drums.kick[1] = P().drums.kick[1] ? 0 : 1; paint();
+  if(encode(state)===before) throw new Error('test edit did nothing');
+  undo();
+  eq(encode(state),before,'undo restores the previous state');
   ensureAudio();
   renderWav(1).then(buf=>{
     const d=buf.getChannelData(0);
