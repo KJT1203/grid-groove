@@ -155,7 +155,8 @@ const noteName = m => KEYS[((m%12)+12)%12] + (Math.floor(m/12)-1);
 
 /* ---------- state ---------- */
 const PATS = 4, PAT_NAMES = ['A','B','C','D'];
-const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8});
+const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8,tone:100});
+const toneHz = t => 200*Math.pow(90,t/100);        // 200Hz closed .. 18kHz wide open
 const blankPat = (nTracks,n) => ({
   drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(n||STEPS).fill(0)])),
   steps:Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0))
@@ -195,7 +196,8 @@ const hex3 = n => ('00'+(n&0xfff).toString(16)).slice(-3);
 const clamp = (v,lo,hi,dflt) => isNaN(v) ? dflt : Math.min(hi,Math.max(lo,v));
 const emptyLane = () => '0'.repeat(STEPS);
 function encode(s){
-  const kit = s.tracks.map(tr=>[tr.inst,tr.oct,Math.round(tr.len*4),tr.mute,Math.round(tr.vol*99)].join(':')).join(';');
+  const kit = s.tracks.map(tr=>[tr.inst,tr.oct,Math.round(tr.len*4),tr.mute,
+    Math.round(tr.vol*99),tr.tone].join(':')).join(';');
   // trailing empties are dropped and refilled on decode: a one-pattern song
   // should not carry three empty ones around in the URL
   const pats = s.pats.map(pt=>{
@@ -242,6 +244,7 @@ function readTrack(chunk){
   const tr = blankTrack(INST[f[0]] ? f[0] : 'piano', clamp(+f[1],-3,3,0), clamp(+f[2],1,32,4)/4);
   tr.mute = +f[3] ? 1 : 0;
   tr.vol  = clamp(+f[4],0,99,79)/99;
+  tr.tone = clamp(+f[5],0,100,100);
   return tr;
 }
 const readSteps = (st,n) => Array.from({length:n||STEPS},(_,i)=>(parseInt(String(st).substr(i*3,3),16)|0) & 0xfff);
@@ -283,6 +286,7 @@ function upgradeV2(p){
   readDrums(s.pats[0],p[6]);
   const chunks = p[7].split(';').filter(Boolean);
   s.tracks = chunks.map(readTrack);
+  s.tracks.forEach(t=>{ t.tone = 100; });        // v2 field 5 was the step data, not tone
   if(!s.tracks.length) s.tracks = blank().tracks;
   s.pats = Array.from({length:PATS},()=>blankPat(s.tracks.length));
   readDrums(s.pats[0],p[6]);
@@ -291,7 +295,7 @@ function upgradeV2(p){
 }
 
 /* ---------- audio graph ---------- */
-let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], noiseBuf, ksCache={};
+let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], trackTone=[], noiseBuf, ksCache={};
 let dlyL, dlyR, echoGain, sendEcho, sendEchoD, scopeAn, scopeBuf;
 function drawScope(){
   const cv=document.getElementById('scope'), g=cv.getContext('2d');
@@ -361,11 +365,15 @@ function syncTrackGains(){
   if(!ac) return;
   state.tracks.forEach((tr,i)=>{
     if(!trackGain[i]){
-      const g=ac.createGain(); g.connect(master); g.connect(sendMel); g.connect(sendEcho); trackGain[i]=g;
+      const g=ac.createGain(), f=ac.createBiquadFilter();
+      f.type='lowpass'; f.Q.value=0.7;
+      g.connect(f); f.connect(master); f.connect(sendMel); f.connect(sendEcho);
+      trackGain[i]=g; trackTone[i]=f;
     }
     trackGain[i].gain.value = tr.mute ? 0 : tr.vol;
+    trackTone[i].frequency.value = toneHz(tr.tone);
   });
-  trackGain.length = state.tracks.length;
+  trackGain.length = trackTone.length = state.tracks.length;
 }
 function makeIR(sec,decay){
   const len = Math.floor(ac.sampleRate*sec), b = ac.createBuffer(2,len,ac.sampleRate);
@@ -744,9 +752,9 @@ async function renderWav(bars){
   const sd = 60/state.bpm/4, tail = 2.5;
   const off = new OfflineAudioContext(2, Math.ceil(44100*(bars*STEPS*sd + tail)), 44100);
   const live = {ac:ac,master:master,wetGain:wetGain,sendMel:sendMel,sendDrum:sendDrum,
-                laneGain:laneGain,trackGain:trackGain,noiseBuf:noiseBuf,ksCache:ksCache,
+                laneGain:laneGain,trackGain:trackGain,trackTone:trackTone,noiseBuf:noiseBuf,ksCache:ksCache,
                 dlyL:dlyL,dlyR:dlyR,echoGain:echoGain,sendEcho:sendEcho,sendEchoD:sendEchoD};
-  laneGain={}; trackGain=[]; ksCache={}; dlyL=null;
+  laneGain={}; trackGain=[]; trackTone=[]; ksCache={}; dlyL=null;
   buildGraph(off);
   for(let b=0;b<bars;b++){
     const pt = state.pats[state.chain[b % state.chain.length]] || state.pats[0];
@@ -761,7 +769,7 @@ async function renderWav(bars){
     dlyL=live.dlyL; dlyR=live.dlyR; echoGain=live.echoGain;
     sendEcho=live.sendEcho; sendEchoD=live.sendEchoD;
     ac=live.ac; master=live.master; wetGain=live.wetGain; sendMel=live.sendMel;
-    sendDrum=live.sendDrum; laneGain=live.laneGain; trackGain=live.trackGain;
+    sendDrum=live.sendDrum; laneGain=live.laneGain; trackGain=live.trackGain; trackTone=live.trackTone;
     noiseBuf=live.noiseBuf; ksCache=live.ksCache;
   }
   return rendered;
@@ -831,6 +839,7 @@ function buildMelodic(){
     '<label>OCT <button data-oct="-1">&minus;</button><output>'+(tr.oct>0?'+':'')+tr.oct+'</output><button data-oct="1">+</button></label>'+
     '<label>LENGTH <input type="range" id="lenSel" min="1" max="32" value="'+Math.round(tr.len*4)+'"><output id="lenv">'+tr.len+'&times;</output></label>'+
     '<label>LEVEL <input type="range" id="tvol" min="0" max="100" value="'+Math.round(tr.vol*100)+'"></label>'+
+    '<label>TONE <input type="range" id="ttone" min="0" max="100" value="'+tr.tone+'"></label>'+
     '<button class="mute'+(tr.mute?' on':'')+'" id="tmute">MUTE</button>'+
     (state.tracks.length>1 ? '<button id="tdel">DELETE</button>' : '');
 
@@ -969,7 +978,8 @@ document.body.addEventListener('click',e=>{
   if(e.target.id==='tdel'){
     state.tracks.splice(cur,1); solo.clear();
     state.pats.forEach(pt=>pt.steps.splice(cur,1));
-    trackGain.forEach(g=>g.disconnect()); trackGain=[];
+    trackGain.forEach(g=>g.disconnect()); trackTone.forEach(f=>f.disconnect());
+    trackGain=[]; trackTone=[];
     cur=Math.max(0,cur-1); build(); return;
   }
   const p=e.target.closest('[data-preset]');
@@ -983,6 +993,7 @@ document.body.addEventListener('input',e=>{
     $('lenv').innerHTML=state.tracks[cur].len+'&times;'; save(); return;
   }
   if(e.target.id==='tvol'){ state.tracks[cur].vol=e.target.value/100; syncTrackGains(); save(); return; }
+  if(e.target.id==='ttone'){ state.tracks[cur].tone=+e.target.value; syncTrackGains(); save(); return; }
   if(e.target.id==='chain'){
     state.chain = readChain(e.target.value.toUpperCase().split('')
       .map(c=>PAT_NAMES.indexOf(c)).filter(i=>i>=0).join(''));
@@ -1064,8 +1075,8 @@ function load(str){
   state=s; STEPS=state.steps;
   cur=Math.min(cur,state.tracks.length-1);
   pat=Math.min(pat,PATS-1); chainPos=0;
-  if(ac){ trackGain.forEach(g=>g.disconnect()); }
-  trackGain=[];
+  if(ac){ trackGain.forEach(g=>g.disconnect()); trackTone.forEach(f=>f.disconnect()); }
+  trackGain=[]; trackTone=[];
   $('bpm').value=state.bpm;     $('bpmv').textContent=state.bpm;
   $('swing').value=state.swing; $('swingv').textContent=state.swing;
   $('wet').value=state.wet;     $('wetv').textContent=state.wet;
@@ -1212,6 +1223,11 @@ if(location.search.indexOf('test=1')>-1){
   eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).echo,18,'v3 without echo field defaults');
   eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).kit,0,'v3 without kit field defaults');
   eq(KITS.every(k=>k.tune>0&&k.dcy>0&&k.tone>0),true,'kits are complete');
+  eq(Math.round(toneHz(100)),18000,'tone knob opens to 18k');
+  eq(Math.round(toneHz(0)),200,'tone knob closes to 200');
+  eq(decode(v2).tracks[0].tone,100,'v2 tracks default to fully open');
+  const toned=decode(encode(state)); toned.tracks[0].tone=42;
+  eq(decode(encode(toned)).tracks[0].tone,42,'tone survives the round trip');
   const t=blankTrack('piano',0,1);
   eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
   eq(hex3(0xfff),'fff','mask packs');
