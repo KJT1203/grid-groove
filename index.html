@@ -38,7 +38,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .lane .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
 .lane input[type=range]{width:56px}
 .cell{
-  height:30px;border-radius:5px;border:1px solid var(--line);background:#0f131d;cursor:pointer;
+  height:26px;border-radius:5px;border:1px solid var(--line);background:#0f131d;cursor:pointer;
   transition:transform .05s;
 }
 .cell.on{background:var(--c);box-shadow:0 0 10px -2px var(--c)}
@@ -88,7 +88,12 @@ const DRUMS = [
   {id:'hat',  nm:'HAT',   c:'#a3f7bf'},
   {id:'ohat', nm:'O-HAT', c:'#39d9ff'},
   {id:'tom',  nm:'TOM',   c:'#c77dff'},
-  {id:'rim',  nm:'RIM',   c:'#f77f00'}
+  {id:'rim',  nm:'RIM',   c:'#f77f00'},
+  {id:'ride', nm:'RIDE',  c:'#ffd166'},
+  {id:'cow',  nm:'COWBELL',c:'#06d6a0'},
+  {id:'conga',nm:'CONGA', c:'#ef8354'},
+  {id:'shkr', nm:'SHAKER',c:'#b8c0ff'},
+  {id:'stab', nm:'STAB',  c:'#e0aaff'}
 ];
 // C minor pentatonic, highest row first
 const NOTES = [{n:'C3',m:48},{n:'A#2',m:46},{n:'G2',m:43},{n:'F2',m:41},
@@ -146,11 +151,12 @@ function ensureAudio(){
   const ch = noiseBuf.getChannelData(0);
   for(let i=0;i<ch.length;i++) ch[i] = Math.random()*2-1;
 }
-function noise(bus,t,dur,vel,type,freq,q){
+function noise(bus,t,dur,vel,type,freq,q,atk){
   const s=ac.createBufferSource(); s.buffer=noiseBuf;
   const f=ac.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q) f.Q.value=q;
   const g=ac.createGain();
-  g.gain.setValueAtTime(Math.max(0.0001,vel),t);
+  if(atk){ g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(vel,t+atk); }
+  else g.gain.setValueAtTime(Math.max(0.0001,vel),t);
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   s.connect(f).connect(g).connect(bus); s.start(t); s.stop(t+dur+0.02);
 }
@@ -163,6 +169,35 @@ function tone(bus,t,f0,f1,dur,vel,type){
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   o.connect(g).connect(bus); o.start(t); o.stop(t+dur+0.02);
 }
+// 808-style cymbal: six inharmonic squares through band+highpass
+function metal(bus,t,dur,vel,base,hp){
+  const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=base*10; bp.Q.value=0.6;
+  const h=ac.createBiquadFilter(); h.type='highpass'; h.frequency.value=hp;
+  const g=ac.createGain();
+  g.gain.setValueAtTime(Math.max(0.0001,vel),t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  [1,1.4472,1.6170,1.9265,2.5028,2.6637].forEach(r=>{
+    const o=ac.createOscillator(); o.type='square'; o.frequency.value=base*r;
+    o.connect(bp); o.start(t); o.stop(t+dur+0.02);
+  });
+  bp.connect(h).connect(g).connect(bus);
+}
+// plucked Cm triad, fixed to the key the bass rows are locked to
+function stab(bus,t,dur,vel){
+  const f=ac.createBiquadFilter(); f.type='lowpass'; f.Q.value=3;
+  f.frequency.setValueAtTime(4200,t);
+  f.frequency.exponentialRampToValueAtTime(700,t+dur);
+  const g=ac.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(vel,t+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  [60,63,67].forEach(m=>{
+    const o=ac.createOscillator(); o.type='sawtooth';
+    o.frequency.value=midiToFreq(m); o.detune.value=Math.random()*10-5;
+    o.connect(f); o.start(t); o.stop(t+dur+0.03);
+  });
+  f.connect(g).connect(bus);
+}
 function hit(id,t,vel){
   const bus = laneGain[id];
   switch(id){
@@ -174,6 +209,11 @@ function hit(id,t,vel){
     case 'ohat':  noise(bus,t,0.32,vel*0.35,'highpass',7000); break;
     case 'tom':   tone(bus,t,220,90,0.3,vel*0.8); break;
     case 'rim':   tone(bus,t,1600,1200,0.03,vel*0.5,'square'); noise(bus,t,0.02,vel*0.3,'highpass',3000); break;
+    case 'ride':  metal(bus,t,0.9,vel*0.16,300,5200); break;
+    case 'cow':   tone(bus,t,540,540,0.14,vel*0.22,'square'); tone(bus,t,800,800,0.11,vel*0.18,'square'); break;
+    case 'conga': tone(bus,t,400,300,0.22,vel*0.7); noise(bus,t,0.015,vel*0.2,'highpass',2000); break;
+    case 'shkr':  noise(bus,t,0.13,vel*0.3,'bandpass',7000,1.2,0.02); break;
+    case 'stab':  stab(bus,t,0.22,vel*0.28); break;
   }
 }
 function bassNote(t,row,dur,vel){
@@ -372,18 +412,24 @@ function randomize(){
     hat  :new Array(16).fill(0.55),
     ohat :new Array(16).fill(0.08),
     tom  :new Array(16).fill(0.05),
-    rim  :new Array(16).fill(0.08)
+    rim  :new Array(16).fill(0.08),
+    ride :new Array(16).fill(0.06),
+    cow  :[0,0,0,0, 0,0,0.2,0, 0,0,0,0, 0,0,0.2,0],
+    conga:new Array(16).fill(0.1),
+    shkr :new Array(16).fill(0.3),
+    stab :[0.25,0,0,0.1, 0,0,0.15,0, 0.2,0,0,0.1, 0,0,0.15,0]
   };
   DRUMS.forEach(d=>{
-    s.drums[d.id]=odds[d.id].map(p=>Math.random()<p ? (Math.random()<0.25?2:1) : 0);
+    const p=odds[d.id] || new Array(16).fill(0.1);
+    s.drums[d.id]=p.map(x=>Math.random()<x ? (Math.random()<0.25?2:1) : 0);
   });
   for(let i=0;i<STEPS;i++) if(Math.random()<0.35) s.bass[i]=Math.floor(Math.random()*NOTES.length);
   return s;
 }
 const PRESETS={
-  house:   'v1|124|0|1000100010001000,0000100000001000,0000000000000000,0010001000100010,0000000000100000,0000000000000000,0000000000000000|5..5..3..5..1..3',
-  boombap: 'v1|88|22|1000000000100000,0000100000001000,0000000000000000,1010101010101010,0000000000000000,0000000000000100,0000001000000000|5.....5...3.....',
-  breaks:  'v1|150|8|1000001000100000,0000100000001000,0000000000000000,1010101010101010,0000000000001000,0000000000000010,0001000000000000|5..5.3..5..1..3.'
+  house:   'v1|124|0|1000100010001000,0000100000001000,0000000000000000,0010001000100010,0000000000100000,0000000000000000,0000000000000000,0000000000000000,0000000000000000,0000000000000000,0000000100000001,0010000000100000|5..5..3..5..1..3',
+  boombap: 'v1|88|22|1000000000100000,0000100000001000,0000000000000000,1010101010101010,0000000000000000,0000000000000100,0000001000000000,0000000000000000,0000000000000000,0000000100000010,0000000000000000,1000000000000000|5.....5...3.....',
+  breaks:  'v1|150|8|1000001000100000,0000100000001000,0000000000000000,1010101010101010,0000000000001000,0000000000000010,0001000000000000,0000100000001000,0000000000100000,0000000000000000,0000101000001010,0000000000000000|5..5.3..5..1..3.'
 };
 
 /* ---------- boot ---------- */

@@ -19,7 +19,8 @@ A 16-step drum machine + bassline sequencer that lives in one HTML file. No samp
 ## How it works
 
 - **Scheduling** — a `setInterval` runs every 25 ms and schedules any step falling inside the next 120 ms directly on the audio clock (`ac.currentTime`). JS timers are jittery; the audio clock is not, so the groove stays tight even when the page is busy. `requestAnimationFrame` only paints the playhead.
-- **Drums** — oscillators with pitch/gain envelopes (kick, tom, rim) and filtered white noise from a 2-second buffer (snare, clap, hats). The clap is three short noise bursts a few milliseconds apart plus a tail.
+- **Drums** — twelve lanes, all synthesised. Oscillators with pitch/gain envelopes (kick, tom, conga, rim, cowbell), filtered white noise from a 2-second buffer (snare, clap, hats, shaker), six inharmonic squares through a band+highpass for the ride, and a plucked Cm triad for the stab. The clap is three short noise bursts a few milliseconds apart plus a tail.
+- **Lanes** — kick, snare, clap, hat, open hat, tom, rim, ride, cowbell, conga, shaker, stab.
 - **Bass** — saw + square an octave down, through a lowpass whose cutoff sweeps down over the note. Notes are locked to C minor pentatonic so nothing lands wrong.
 - **Patterns** are a plain string: `v1|bpm|swing|lane digits per drum|bass row per step`. That same string is the URL hash and the localStorage value.
 
