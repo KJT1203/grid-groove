@@ -164,14 +164,15 @@ const noteName = m => KEYS[((m%12)+12)%12] + (Math.floor(m/12)-1);
 
 /* ---------- state ---------- */
 const PATS = 4, PAT_NAMES = ['A','B','C','D'];
-const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8,tone:100});
+const ARPS = ['OFF','UP','DOWN','STRUM'];
+const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8,tone:100,arp:0});
 const toneHz = t => 200*Math.pow(90,t/100);        // 200Hz closed .. 18kHz wide open
 const blankPat = (nTracks,n) => ({
   drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(n||STEPS).fill(0)])),
   steps:Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0))
 });
 const blank = () => ({
-  bpm:112, swing:16, vol:80, wet:28, echo:18, kit:0, key:0, scale:0, chain:[0], steps:STEPS,
+  bpm:112, swing:16, vol:80, wet:28, echo:18, kit:0, human:0, key:0, scale:0, chain:[0], steps:STEPS,
   mute:Object.fromEntries(DRUMS.map(d=>[d.id,0])),
   gain:Object.fromEntries(DRUMS.map(d=>[d.id,0.8])),
   tracks:[blankTrack('bass',-1,1.5), blankTrack('piano',0,1), blankTrack('strings',1,4)],
@@ -206,7 +207,7 @@ const clamp = (v,lo,hi,dflt) => isNaN(v) ? dflt : Math.min(hi,Math.max(lo,v));
 const emptyLane = () => '0'.repeat(STEPS);
 function encode(s){
   const kit = s.tracks.map(tr=>[tr.inst,tr.oct,Math.round(tr.len*4),tr.mute,
-    Math.round(tr.vol*99),tr.tone].join(':')).join(';');
+    Math.round(tr.vol*99),tr.tone,tr.arp].join(':')).join(';');
   // trailing empties are dropped and refilled on decode: a one-pattern song
   // should not carry three empty ones around in the URL
   const pats = s.pats.map(pt=>{
@@ -217,7 +218,7 @@ function encode(s){
   const empty = '0'.repeat(s.pats[0].drums.kick.length) + '~' +
                 s.tracks.map(()=>'000'.repeat(s.pats[0].drums.kick.length)).join(';');
   while(pats.length>1 && pats[pats.length-1]===empty) pats.pop();
-  return ['v3',s.bpm,s.swing,s.key,s.scale,s.wet,s.chain.join(''),kit,pats.join('/'),s.echo,s.kit].join('|');
+  return ['v3',s.bpm,s.swing,s.key,s.scale,s.wet,s.chain.join(''),kit,pats.join('/'),s.echo,s.kit,s.human].join('|');
 }
 function decode(str){
   const p = String(str).split('|');
@@ -232,6 +233,7 @@ function decode(str){
   s.wet   = clamp(+p[5],0,100,28);
   s.echo  = clamp(+p[9],0,100,18);
   s.kit   = clamp(+p[10],0,KITS.length-1,0);
+  s.human = clamp(+p[11],0,100,0);
   s.chain = readChain(p[6]);
   s.tracks = p[7].split(';').filter(Boolean).map(readTrack);
   if(!s.tracks.length) s.tracks = blank().tracks;
@@ -254,6 +256,7 @@ function readTrack(chunk){
   tr.mute = +f[3] ? 1 : 0;
   tr.vol  = clamp(+f[4],0,99,79)/99;
   tr.tone = clamp(+f[5],0,100,100);
+  tr.arp  = clamp(+f[6],0,ARPS.length-1,0);
   return tr;
 }
 const readSteps = (st,n) => Array.from({length:n||STEPS},(_,i)=>(parseInt(String(st).substr(i*3,3),16)|0) & 0xfff);
@@ -295,7 +298,7 @@ function upgradeV2(p){
   readDrums(s.pats[0],p[6]);
   const chunks = p[7].split(';').filter(Boolean);
   s.tracks = chunks.map(readTrack);
-  s.tracks.forEach(t=>{ t.tone = 100; });        // v2 field 5 was the step data, not tone
+  s.tracks.forEach(t=>{ t.tone = 100; t.arp = 0; });   // v2 field 5 was the step data, not tone
   if(!s.tracks.length) s.tracks = blank().tracks;
   s.pats = Array.from({length:PATS},()=>blankPat(s.tracks.length));
   readDrums(s.pats[0],p[6]);
@@ -701,18 +704,29 @@ const queue=[];
 const stepDur = () => 60/state.bpm/4;
 function stepTime(base,i){ return i%2 ? base + stepDur()*(state.swing/100) : base; }
 
+const jitterT = () => (Math.random()-0.5) * state.human/100 * 0.024;   // up to +/-12ms
+const jitterV = () => 1 + (Math.random()-0.5) * state.human/100 * 0.35;
 function fireStep(i,t,pt){
   pt = pt || playPat();
   DRUMS.forEach(d=>{
     const v = pt.drums[d.id][i];
-    if(v && !state.mute[d.id] && audible('d:'+d.id)) hit(d.id,t,v===2?1:0.6);
+    if(v && !state.mute[d.id] && audible('d:'+d.id))
+      hit(d.id, Math.max(t+jitterT(),ac.currentTime), (v===2?1:0.6)*jitterV());
   });
   state.tracks.forEach((tr,ti)=>{
     const mask = pt.steps[ti] ? pt.steps[ti][i] : 0;
     if(tr.mute || !mask || !trackGain[ti] || !audible('t:'+ti)) return;
-    const inst = INST[tr.inst] || INST.piano;
-    for(let r=0;r<ROWS;r++)
-      if(mask & (1<<r)) inst.play(trackGain[ti],t,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75*inst.k);
+    const inst = INST[tr.inst] || INST.piano, dur = stepDur()*tr.len;
+    const rows = [];
+    for(let r=0;r<ROWS;r++) if(mask & (1<<r)) rows.push(r);
+    // rows count downward, so the last row is the lowest note
+    if(tr.arp===1) rows.reverse();                       // UP: lowest first
+    const spread = (tr.arp===3) ? 0.014 : (tr.arp && rows.length>1 ? dur/rows.length : 0);
+    rows.forEach((r,n)=>{
+      const at = Math.max(t + jitterT() + n*spread, ac.currentTime);
+      const len = (tr.arp===1||tr.arp===2) && rows.length>1 ? dur/rows.length : dur;
+      inst.play(trackGain[ti],at,midiToFreq(rowMidi(tr,r)),len,0.75*inst.k*jitterV());
+    });
   });
 }
 function scheduler(){
@@ -849,6 +863,8 @@ function buildMelodic(){
     '<label>LENGTH <input type="range" id="lenSel" min="1" max="32" value="'+Math.round(tr.len*4)+'"><output id="lenv">'+tr.len+'&times;</output></label>'+
     '<label>LEVEL <input type="range" id="tvol" min="0" max="100" value="'+Math.round(tr.vol*100)+'"></label>'+
     '<label>TONE <input type="range" id="ttone" min="0" max="100" value="'+tr.tone+'"></label>'+
+    '<label>ARP <select id="tarp">'+ARPS.map((a,i)=>
+      '<option value="'+i+'"'+(i===tr.arp?' selected':'')+'>'+a+'</option>').join('')+'</select></label>'+
     '<button class="mute'+(tr.mute?' on':'')+'" id="tmute">MUTE</button>'+
     (state.tracks.length>1 ? '<button id="tdel">DELETE</button>' : '');
 
@@ -879,6 +895,7 @@ function buildSong(){
     '<button class="tab" id="dup">DUPLICATE &rarr;</button>'+
     '<label>CHAIN <input id="chain" maxlength="16" value="'+
       state.chain.map(i=>PAT_NAMES[i]).join('')+'"></label>'+
+    '<label>HUMAN <input id="human" type="range" min="0" max="100" value="'+state.human+'"></label>'+
     '<label>STEPS <select id="slen">'+LENGTHS.map(n=>
       '<option value="'+n+'"'+(n===STEPS?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
     '</div>';
@@ -1007,6 +1024,7 @@ document.body.addEventListener('input',e=>{
   }
   if(e.target.id==='tvol'){ state.tracks[cur].vol=e.target.value/100; syncTrackGains(); save(); return; }
   if(e.target.id==='ttone'){ state.tracks[cur].tone=+e.target.value; syncTrackGains(); save(); return; }
+  if(e.target.id==='human'){ state.human=+e.target.value; save(); return; }
   if(e.target.id==='chain'){
     state.chain = readChain(e.target.value.toUpperCase().split('')
       .map(c=>PAT_NAMES.indexOf(c)).filter(i=>i>=0).join(''));
@@ -1021,6 +1039,7 @@ document.body.addEventListener('change',e=>{
     ins.play(trackGain[cur],ac.currentTime+0.02,midiToFreq(rowMidi(tr,ROWS-1)),0.6,0.75*ins.k);
     return;
   }
+  if(e.target.id==='tarp'){ state.tracks[cur].arp=+e.target.value; save(); return; }
   if(e.target.id==='slen'){
     const n=+e.target.value, fit=(a)=>Array.from({length:n},(_,i)=>a[i]||0);
     state.steps=STEPS=n;
@@ -1240,6 +1259,13 @@ if(location.search.indexOf('test=1')>-1){
   eq(Math.round(toneHz(100)),18000,'tone knob opens to 18k');
   eq(Math.round(toneHz(0)),200,'tone knob closes to 200');
   eq(decode(v2).tracks[0].tone,100,'v2 tracks default to fully open');
+  eq(decode(v2).tracks[0].arp,0,'v2 tracks have no arp');
+  const arped=decode(encode(state)); arped.tracks[0].arp=2; arped.human=40;
+  eq(decode(encode(arped)).tracks[0].arp,2,'arp survives the round trip');
+  eq(decode(encode(arped)).human,40,'humanize survives the round trip');
+  const h=state.human; state.human=0;
+  eq([jitterT(),jitterV()],[0,1],'humanize at zero changes nothing');
+  state.human=h;
   const toned=decode(encode(state)); toned.tracks[0].tone=42;
   eq(decode(encode(toned)).tracks[0].tone,42,'tone survives the round trip');
   const t=blankTrack('piano',0,1);
