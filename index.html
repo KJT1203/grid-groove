@@ -110,11 +110,7 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 </section>
 
 <footer>
-  <button data-preset="house">HOUSE</button>
-  <button data-preset="boombap">BOOM BAP</button>
-  <button data-preset="cinematic">CINEMATIC</button>
-  <button data-preset="chiptune">CHIPTUNE</button>
-  <button data-preset="organloft">ORGAN LOFT</button>
+  <select id="preset"></select>
   <button id="rand">RANDOM</button>
   <button id="clear">CLEAR</button>
   <button id="share">COPY LINK</button>
@@ -268,7 +264,7 @@ function decode(str){
 }
 function readTrack(chunk){
   const f = chunk.split(':');
-  const tr = blankTrack(INST[f[0]] ? f[0] : 'piano', clamp(+f[1],-3,3,0), clamp(+f[2],1,32,4)/4);
+  const tr = blankTrack(INST[f[0]] ? f[0] : 'piano', clamp(+f[1],-3,3,0), clamp(+f[2],1,64,4)/4);
   tr.mute = +f[3] ? 1 : 0;
   tr.vol  = clamp(+f[4],0,99,79)/99;
   tr.tone = clamp(+f[5],0,100,100);
@@ -920,7 +916,7 @@ function buildMelodic(){
       '<optgroup label="'+g+'">'+INST_GROUPS[g].map(k=>
         '<option value="'+k+'"'+(k===tr.inst?' selected':'')+'>'+INST[k].nm+'</option>').join('')+'</optgroup>').join('')+'</select></label>'+
     '<label>OCT <button data-oct="-1">&minus;</button><output>'+(tr.oct>0?'+':'')+tr.oct+'</output><button data-oct="1">+</button></label>'+
-    '<label>LENGTH <input type="range" id="lenSel" min="1" max="32" value="'+Math.round(tr.len*4)+'"><output id="lenv">'+tr.len+'&times;</output></label>'+
+    '<label>LENGTH <input type="range" id="lenSel" min="1" max="64" value="'+Math.round(tr.len*4)+'"><output id="lenv">'+tr.len+'&times;</output></label>'+
     '<label>LEVEL <input type="range" id="tvol" min="0" max="100" value="'+Math.round(tr.vol*100)+'"></label>'+
     '<label>TONE <input type="range" id="ttone" min="0" max="100" value="'+tr.tone+'"></label>'+
     '<label>ARP <select id="tarp">'+ARPS.map((a,i)=>
@@ -1076,8 +1072,7 @@ document.body.addEventListener('click',e=>{
     trackGain=[]; trackTone=[];
     cur=Math.max(0,cur-1); build(); return;
   }
-  const p=e.target.closest('[data-preset]');
-  if(p) load(PRESETS[p.dataset.preset]);
+
 });
 document.body.addEventListener('input',e=>{
   const g=e.target.dataset.gain;
@@ -1165,7 +1160,7 @@ addEventListener('keydown',e=>{
 });
 
 function load(str){
-  const s=decode(str) || decode(PRESETS.house);
+  const s=decode(str) || decode(PRESETS['HOUSE']);
   const wasPlaying=playing;
   s.vol=state.vol; s.mute=state.mute; s.gain=state.gain;
   state=s; STEPS=state.steps;
@@ -1222,76 +1217,154 @@ function randomize(){
 
 /* ---------- presets ---------- */
 // notes are scale degrees counted up from the track root, so a preset survives a key change
-function mk(bpm,swing,scale,kit,pats,chain){
-  const s=blank(); s.bpm=bpm; s.swing=swing; s.scale=scale;
-  s.tracks=kit.map(t=>{ const tr=blankTrack(t.inst,t.oct||0,t.len||1); if(t.vol) tr.vol=t.vol; return tr; });
-  s.pats=Array.from({length:PATS},()=>blankPat(s.tracks.length));
-  pats.forEach((pd,pi)=>{
-    Object.keys(pd.drums||{}).forEach(k=>{ s.pats[pi].drums[k]=pd.drums[k].split('').map(c=>+c||0); });
-    (pd.notes||[]).forEach((notes,ti)=>Object.keys(notes).forEach(st=>{
+function mk(o){
+  const n = o.steps || 16;
+  const s = blank();
+  s.bpm=o.bpm; s.swing=o.swing||0; s.scale=o.scale||0; s.key=o.key||0; s.steps=n;
+  s.kit=o.kit||0; s.echo=o.echo===undefined?18:o.echo; s.wet=o.wet===undefined?28:o.wet; s.human=o.human||0;
+  s.tracks=o.tracks.map(t=>{
+    const tr=blankTrack(t.inst,t.oct||0,t.len||1);
+    if(t.vol!==undefined) tr.vol=t.vol;
+    if(t.tone!==undefined) tr.tone=t.tone;
+    if(t.arp) tr.arp=t.arp;
+    return tr;
+  });
+  s.pats=Array.from({length:PATS},()=>blankPat(s.tracks.length,n));
+  o.pats.forEach((pd,pi)=>{
+    Object.keys(pd.drums||{}).forEach(k=>{
+      s.pats[pi].drums[k]=Array.from({length:n},(_,i)=>+(pd.drums[k][i]||0));
+    });
+    (pd.notes||[]).forEach((notes,ti)=>Object.keys(notes||{}).forEach(st=>{
       s.pats[pi].steps[ti][+st] = notes[st].reduce((m,idx)=>m|(1<<(ROWS-1-idx)),0);
     }));
     (pd.accents||[]).forEach((notes,ti)=>Object.keys(notes||{}).forEach(st=>{
       s.pats[pi].accs[ti][+st] = notes[st].reduce((m,idx)=>m|(1<<(ROWS-1-idx)),0);
     }));
   });
-  s.chain=readChain(chain||'0');
+  s.chain=readChain(o.chain||'0');
   return encode(s);
 }
 const PRESETS={
-  house: mk(124,0,0,
-    [{inst:'bass',oct:-1,len:1.2},{inst:'rhodes',oct:0,len:1.6},{inst:'strings',oct:1,len:8}],
-    [{ drums:{kick:'1000100010001000', snare:'0000100000001000', hat:'0010001000100010',
-              ohat:'0000000000100000', shkr:'0000000100000001'},
+  'HOUSE': mk({bpm:124,scale:0,kit:2,chain:'0001',
+    tracks:[{inst:'bass',oct:-1,len:1.2},{inst:'rhodes',len:1.6},{inst:'strings',oct:1,len:8,vol:0.6}],
+    pats:[
+      {drums:{kick:'1000100010001000',snare:'0000100000001000',hat:'0010001000100010',
+              ohat:'0000000000100000',shkr:'0000000100000001'},
        notes:[{0:[0],3:[0],6:[2],8:[0],11:[3],14:[1]},
-              {2:[0,1,3],6:[0,1,3],10:[1,3,4],14:[1,3,4]},
-              {0:[0,1,3]}] },
-     { drums:{kick:'1000100010001000', snare:'0000100000001000', clap:'0000100000001000',
-              hat:'0010001000100010', ohat:'0000001000100010', shkr:'0101010101010101'},
+              {2:[0,1,3],6:[0,1,3],10:[1,3,4],14:[1,3,4]},{0:[0,1,3]}],
+       accents:[{0:[0],8:[0]},{},{}]},
+      {drums:{kick:'1000100010001000',snare:'0000100000001000',clap:'0000100000001000',
+              hat:'0010001000100010',ohat:'0000001000100010',shkr:'0101010101010101'},
        notes:[{0:[1],3:[1],6:[3],8:[1],11:[4],14:[2]},
-              {2:[1,3,4],6:[1,3,4],10:[2,4,5],14:[2,4,5]},
-              {0:[1,3,4]}] }],
-    '0001'),
+              {2:[1,3,4],6:[1,3,4],10:[2,4,5],14:[2,4,5]},{0:[1,3,4]}]}]}),
 
-  boombap: mk(88,22,2,
-    [{inst:'bassguit',oct:-1,len:1.4},{inst:'rhodes',oct:0,len:2},{inst:'guitar',oct:1,len:1}],
-    [{ drums:{kick:'1000000000100000', snare:'0000100000001000', hat:'1010101010101010',
-              rim:'0000001000000000', conga:'0000000100000010'},
-       notes:[{0:[0],6:[4],10:[0],13:[2]}, {4:[2,4,6],12:[1,3,5]}, {7:[4],8:[5],15:[2]}] },
-     { drums:{kick:'1000000000100000', snare:'0000100000001000', hat:'1010101010101010',
-              tom:'0000000000001010', conga:'0000000100000000'},
-       notes:[{0:[0],6:[4],10:[0],14:[6]}, {4:[2,4,6],12:[0,2,4]}, {7:[6],9:[5],11:[4]}] }],
-    '0001'),
+  'BOOM BAP': mk({bpm:88,swing:22,scale:2,kit:3,human:35,chain:'0001',
+    tracks:[{inst:'bassguit',oct:-1,len:1.4},{inst:'rhodes',len:2},{inst:'guitar',oct:1,len:1,vol:0.6}],
+    pats:[
+      {drums:{kick:'1000000000100000',snare:'0000100000001000',hat:'1010101010101010',
+              rim:'0000001000000000',conga:'0000000100000010'},
+       notes:[{0:[0],6:[4],10:[0],13:[2]},{4:[2,4,6],12:[1,3,5]},{7:[4],8:[5],15:[2]}],
+       accents:[{0:[0]},{4:[2,4,6]},{}]},
+      {drums:{kick:'1000000000100000',snare:'0000100000001000',hat:'1010101010101010',
+              tom:'0000000000001010',conga:'0000000100000000'},
+       notes:[{0:[0],6:[4],10:[0],14:[6]},{4:[2,4,6],12:[0,2,4]},{7:[6],9:[5],11:[4]}]}]}),
 
-  cinematic: mk(76,0,5,
-    [{inst:'cello',oct:-1,len:8},{inst:'strings',oct:0,len:6},{inst:'horn',oct:1,len:4},
-     {inst:'choir',oct:1,len:8},{inst:'timpani',oct:-2,len:1}],
-    [{ drums:{ride:'0000000010000000'},
-       notes:[{0:[0],8:[4]}, {0:[0,2,4],8:[2,4,6]}, {4:[4],12:[6]}, {0:[7]}, {0:[0],14:[0]}] },
-     { drums:{ride:'0000000010000000', conga:'0000000000000010'},
-       notes:[{0:[2],8:[6]}, {0:[2,4,6],8:[4,6,8]}, {4:[6],12:[8]}, {0:[9]}, {0:[0],12:[0],15:[0]}] }],
-    '0011'),
+  'CINEMATIC': mk({bpm:76,scale:5,wet:52,echo:8,chain:'0011',
+    tracks:[{inst:'cello',oct:-1,len:8},{inst:'strings',len:6},{inst:'horn',oct:1,len:4,vol:0.6},
+            {inst:'choir',oct:1,len:8,vol:0.6},{inst:'timpani',oct:-2,len:1}],
+    pats:[
+      {drums:{ride:'0000000010000000'},
+       notes:[{0:[0],8:[4]},{0:[0,2,4],8:[2,4,6]},{4:[4],12:[6]},{0:[7]},{0:[0],14:[0]}],
+       accents:[{},{},{},{},{0:[0]}]},
+      {drums:{ride:'0000000010000000',conga:'0000000000000010'},
+       notes:[{0:[2],8:[6]},{0:[2,4,6],8:[4,6,8]},{4:[6],12:[8]},{0:[9]},{0:[0],12:[0],15:[0]}]}]}),
 
-  chiptune: mk(150,0,3,
-    [{inst:'chip',oct:0,len:0.75},{inst:'subbass',oct:-1,len:1.5},{inst:'lead',oct:1,len:1}],
-    [{ drums:{kick:'1000001000100000', snare:'0000100000001000', hat:'1010101010101010',
-              cow:'0000000000100000'},
+  'CHIPTUNE': mk({bpm:150,scale:3,kit:2,echo:26,chain:'0101',
+    tracks:[{inst:'chip',len:0.75},{inst:'subbass',oct:-1,len:1.5},{inst:'lead',oct:1,len:1,vol:0.6}],
+    pats:[
+      {drums:{kick:'1000001000100000',snare:'0000100000001000',hat:'1010101010101010',cow:'0000000000100000'},
        notes:[{0:[0],1:[2],2:[4],3:[2],4:[5],6:[4],8:[7],10:[4],12:[5],14:[2]},
-              {0:[0],4:[0],8:[3],12:[2]}, {5:[4],7:[5],13:[7]}] },
-     { drums:{kick:'1000001000100010', snare:'0000100000001000', hat:'1111111111111111',
-              cow:'0010000000100000'},
+              {0:[0],4:[0],8:[3],12:[2]},{5:[4],7:[5],13:[7]}],
+       accents:[{0:[0],8:[7]},{},{}]},
+      {drums:{kick:'1000001000100010',snare:'0000100000001000',hat:'1111111111111111',cow:'0010000000100000'},
        notes:[{0:[7],1:[5],2:[4],3:[5],4:[7],6:[9],8:[7],10:[5],12:[4],14:[5]},
-              {0:[3],4:[3],8:[2],12:[0]}, {2:[9],6:[7],10:[9],14:[11]}] }],
-    '0101'),
+              {0:[3],4:[3],8:[2],12:[0]},{2:[9],6:[7],10:[9],14:[11]}]}]}),
 
-  organloft: mk(96,0,5,
-    [{inst:'organ',oct:0,len:4},{inst:'organ',oct:-2,len:8},{inst:'chimes',oct:2,len:8},
-     {inst:'oohs',oct:1,len:8}],
-    [{ drums:{},
-       notes:[{0:[0,2,4],4:[1,3,5],8:[2,4,6],12:[0,2,4]}, {0:[0],8:[2]}, {0:[7]}, {0:[4]}] },
-     { drums:{timpani:''},
-       notes:[{0:[4,6,8],4:[3,5,7],8:[2,4,6],12:[0,2,4]}, {0:[4],8:[0]}, {8:[9]}, {0:[6]}] }],
-    '0011')
+  'ORGAN LOFT': mk({bpm:96,scale:5,wet:60,echo:6,chain:'0011',
+    tracks:[{inst:'organ',len:4},{inst:'organ',oct:-2,len:8,vol:0.6},
+            {inst:'chimes',oct:2,len:8,vol:0.5},{inst:'oohs',oct:1,len:8,vol:0.6}],
+    pats:[
+      {drums:{},notes:[{0:[0,2,4],4:[1,3,5],8:[2,4,6],12:[0,2,4]},{0:[0],8:[2]},{0:[7]},{0:[4]}]},
+      {drums:{},notes:[{0:[4,6,8],4:[3,5,7],8:[2,4,6],12:[0,2,4]},{0:[4],8:[0]},{8:[9]},{0:[6]}]}]}),
+
+  'FOLK': mk({bpm:112,swing:12,scale:1,key:7,kit:4,human:45,wet:22,chain:'0001',
+    tracks:[{inst:'guitar',len:3,arp:3},{inst:'mandolin',oct:1,len:1,vol:0.65},
+            {inst:'dbass',oct:-2,len:2},{inst:'accord',len:4,vol:0.5,tone:70}],
+    pats:[
+      {drums:{kick:'1000000010000000',snare:'0000100000001000',shkr:'0010101000101010',rim:'0000000000100000'},
+       notes:[{0:[0,2,4],8:[1,3,5]},{2:[7],3:[6],4:[5],7:[4],10:[5],11:[6],14:[7]},
+              {0:[0],4:[0],8:[2],12:[1]},{0:[0,2,4],8:[1,3,5]}],
+       accents:[{0:[0,2,4]},{2:[7]},{0:[0]},{}]},
+      {drums:{kick:'1000000010000000',snare:'0000100000001000',shkr:'1010101010101010',conga:'0000001000000010'},
+       notes:[{0:[2,4,6],8:[0,2,4]},{0:[9],2:[8],4:[7],6:[6],8:[7],12:[9],15:[7]},
+              {0:[2],4:[2],8:[0],12:[3]},{0:[2,4,6],8:[0,2,4]}]}]}),
+
+  'GAMELAN': mk({bpm:104,scale:1,wet:55,echo:10,chain:'0011',
+    tracks:[{inst:'gamelan',len:2},{inst:'gamelan',oct:-1,len:4,vol:0.7},
+            {inst:'gong',oct:-2,len:8,vol:0.8},{inst:'hang',oct:1,len:2,vol:0.6},
+            {inst:'panflute',oct:1,len:4,vol:0.5}],
+    pats:[
+      {drums:{conga:'0010001000100010',rim:'0000000010000000'},
+       notes:[{0:[4],2:[2],4:[3],6:[2],8:[4],10:[5],12:[4],14:[2]},
+              {0:[0],8:[2]},{0:[0]},{3:[7],11:[6]},{0:[4],8:[7]}],
+       accents:[{0:[4],8:[4]},{0:[0]},{0:[0]},{},{}]},
+      {drums:{conga:'0010001000100010',rim:'0000000010000010',shkr:'0101010101010101'},
+       notes:[{0:[5],2:[4],4:[2],6:[4],8:[5],10:[7],12:[5],14:[4]},
+              {0:[2],8:[0]},{8:[0]},{1:[9],9:[7]},{4:[9],12:[5]}]}]}),
+
+  'DUB': mk({bpm:140,swing:16,scale:2,kit:1,echo:62,wet:40,human:25,chain:'0100',
+    tracks:[{inst:'subbass',oct:-2,len:2},{inst:'reedorg',len:1,vol:0.55,tone:64},
+            {inst:'eguitar',oct:1,len:0.75,vol:0.5},{inst:'harmonica',len:2,vol:0.5}],
+    pats:[
+      {drums:{kick:'1000000000001000',snare:'0000000010000000',rim:'0010000000100000',shkr:'0000101000001010'},
+       notes:[{0:[0],3:[0],8:[2],11:[0]},{6:[2,4,6],14:[1,3,5]},{7:[6],15:[4]},{4:[4],12:[6]}],
+       accents:[{0:[0]},{},{},{}]},
+      {drums:{kick:'1000000000001000',snare:'0000000010000000',ohat:'0000001000000010',conga:'0001000100010001'},
+       notes:[{0:[0],6:[3],8:[2],14:[1]},{2:[1,3,5],10:[2,4,6]},{3:[7],11:[5]},{0:[6],8:[4]}]}]}),
+
+  'TRANCE': mk({bpm:138,scale:2,kit:2,echo:34,wet:44,steps:32,chain:'0011',
+    tracks:[{inst:'supersaw',len:0.75,vol:0.5,arp:1},{inst:'subbass',oct:-1,len:0.5},
+            {inst:'pad',oct:1,len:16,vol:0.45},{inst:'psyn',oct:1,len:0.75,vol:0.5}],
+    pats:[
+      {drums:{kick:'10001000100010001000100010001000',
+              ohat:'00100010001000100010001000100010',
+              clap:'00000000100000000000000010000000',
+              shkr:'01010101010101010101010101010101'},
+       notes:[{0:[0,2,4],8:[0,2,4],16:[1,3,5],24:[1,3,5]},
+              {2:[0],4:[0],6:[0],10:[0],12:[0],14:[0],18:[0],20:[0],22:[0],26:[0],28:[0],30:[0]},
+              {0:[0,2,4]},{3:[7],7:[6],11:[7],15:[9],19:[7],23:[6],27:[7],31:[9]}],
+       accents:[{0:[0,2,4],16:[1,3,5]},{0:[0]},{},{}]},
+      {drums:{kick:'10001000100010001000100010001000',
+              ohat:'00100010001000100010001000100010',
+              clap:'00000000100000000000000010000000',
+              ride:'00000000000000000000000010001000'},
+       notes:[{0:[2,4,6],8:[2,4,6],16:[3,5,7],24:[3,5,7]},
+              {2:[2],4:[2],6:[2],10:[2],12:[2],14:[2],18:[3],20:[3],22:[3],26:[3],28:[3],30:[3]},
+              {0:[2,4,6]},{1:[9],5:[7],9:[9],13:[11],17:[9],21:[7],25:[9],29:[11]}]}]}),
+
+  'MARCH': mk({bpm:118,scale:3,kit:4,human:30,wet:34,echo:4,chain:'0001',
+    tracks:[{inst:'brasses',len:1.5},{inst:'tuba',oct:-2,len:1},
+            {inst:'piccolo',oct:2,len:0.75,vol:0.5},{inst:'trombone',oct:-1,len:2,vol:0.6}],
+    pats:[
+      {drums:{snare:'1010101010101010',kick:'1000000010000000',rim:'0000100000001000',
+              conga:'0000000000000010'},
+       notes:[{0:[0,2,4],4:[0,2,4],8:[1,3,5],12:[0,2,4]},{0:[0],4:[4],8:[2],12:[4]},
+              {2:[7],3:[6],6:[7],10:[9],14:[7]},{0:[0],8:[2]}],
+       accents:[{0:[0,2,4],8:[1,3,5]},{0:[0],8:[2]},{},{}]},
+      {drums:{snare:'1110111011101110',kick:'1000000010000000',tom:'0000000000001110',
+              cow:'0000000000000001'},
+       notes:[{0:[2,4,6],4:[1,3,5],8:[0,2,4],12:[4,6,8]},{0:[2],4:[0],8:[4],12:[0]},
+              {2:[9],3:[7],6:[9],10:[11],14:[9]},{0:[2],8:[0]}]}]})
 };
 
 /* ---------- saved songs ---------- */
@@ -1330,7 +1403,14 @@ buildSlots();
 $('key').innerHTML = KEYS.map((k,i)=>'<option value="'+i+'">'+k+'</option>').join('');
 $('scale').innerHTML = SCALES.map((s,i)=>'<option value="'+i+'">'+s.nm+'</option>').join('');
 $('kit').innerHTML = KITS.map((k,i)=>'<option value="'+i+'">'+k.nm+'</option>').join('');
-load(location.hash.slice(1) || localStorage.getItem('gridgroove') || PRESETS.house);
+$('preset').innerHTML = '<option value="">PRESETS...</option>'+
+  Object.keys(PRESETS).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+$('preset').onchange = e=>{
+  if(!PRESETS[e.target.value]) return;
+  load(PRESETS[e.target.value]); msg(e.target.value.toLowerCase()+' loaded');
+  e.target.value='';
+};
+load(location.hash.slice(1) || localStorage.getItem('gridgroove') || PRESETS['HOUSE']);
 
 /* ponytail: one runnable check — open index.html?test=1 */
 if(location.search.indexOf('test=1')>-1){
@@ -1352,9 +1432,12 @@ if(location.search.indexOf('test=1')>-1){
   eq(decode(encode(long)).steps,32,'step count survives the round trip');
   eq(decode(encode(long)).pats[0].drums.kick.length,32,'lanes resize with it');
   eq(readChain('zz'),[0],'bad chain falls back to A');
-  eq(decode(PRESETS.house).chain,[0,0,0,1],'preset chain');
-  eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).echo,18,'v3 without echo field defaults');
-  eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).kit,0,'v3 without kit field defaults');
+  eq(decode(PRESETS['HOUSE']).chain,[0,0,0,1],'preset chain');
+  eq(decode(PRESETS['TRANCE']).steps,32,'a preset can be 32 steps long');
+  eq(Object.keys(PRESETS).every(k=>decode(PRESETS[k]).tracks.every(t=>INST[t.inst])),true,
+     'every preset track names a real instrument');
+  eq(decode(PRESETS['HOUSE'].split('|').slice(0,9).join('|')).echo,18,'v3 without echo field defaults');
+  eq(decode(PRESETS['HOUSE'].split('|').slice(0,9).join('|')).kit,0,'v3 without kit field defaults');
   eq(KITS.every(k=>k.tune>0&&k.dcy>0&&k.tone>0),true,'kits are complete');
   eq(Math.round(toneHz(100)),18000,'tone knob opens to 18k');
   eq(Math.round(toneHz(0)),200,'tone knob closes to 200');
@@ -1378,6 +1461,7 @@ if(location.search.indexOf('test=1')>-1){
   eq(decode(encAcc).pats[0].accs[0][0],1<<5,'accents survive the round trip');
   eq(encode(decode(encAcc)),encAcc,'accented song is canonical');
   const noAcc=decode(encode(state));
+  noAcc.pats.forEach(pt=>{ pt.accs=pt.accs.map(a=>a.map(()=>0)); });
   eq(encode(noAcc).indexOf('=')<0,true,'a song with no accents pays nothing for them');
   eq(audible('d:kick'),true,'nothing soloed means everything sounds');
   solo.add('d:snare');
