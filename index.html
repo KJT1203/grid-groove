@@ -1216,6 +1216,7 @@ load(location.hash.slice(1) || localStorage.getItem('gridgroove') || PRESETS.hou
 /* ponytail: one runnable check — open index.html?test=1 */
 if(location.search.indexOf('test=1')>-1){
   const eq=(a,b,m)=>{ if(JSON.stringify(a)!==JSON.stringify(b)) throw new Error(m+': '+a+' != '+b); };
+  const snapshot=encode(state);   // the checks below edit the live song; it goes back at the end
   eq(Math.round(midiToFreq(69)),440,'a440');
   Object.keys(PRESETS).forEach(k=>eq(encode(decode(PRESETS[k])),PRESETS[k],'roundtrip '+k));
   eq(decode('garbage'),null,'reject bad input');
@@ -1252,11 +1253,14 @@ if(location.search.indexOf('test=1')>-1){
   state.bpm=120; state.swing=50;
   eq(+stepTime(0,1).toFixed(4), +(stepDur()*0.5).toFixed(4),'swing offsets odd steps');
   eq(stepTime(0,2),0,'even steps stay on grid');
+  paint();                        // sync the undo baseline after the direct edits above
   const before=encode(state);
   P().drums.kick[1] = P().drums.kick[1] ? 0 : 1; paint();
   if(encode(state)===before) throw new Error('test edit did nothing');
   undo();
   eq(encode(state),before,'undo restores the previous state');
+  restoring=true; load(snapshot); restoring=false; history.length=0; future.length=0;
+  eq(encode(state),snapshot,'the song is left exactly as it was found');
   ensureAudio();
   renderWav(1).then(buf=>{
     const d=buf.getChannelData(0);
