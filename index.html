@@ -175,7 +175,8 @@ const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8,
 const toneHz = t => 200*Math.pow(90,t/100);        // 200Hz closed .. 18kHz wide open
 const blankPat = (nTracks,n) => ({
   drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(n||STEPS).fill(0)])),
-  steps:Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0))
+  steps:Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0)),
+  accs :Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0))
 });
 const blank = () => ({
   bpm:112, swing:16, vol:80, wet:28, echo:18, kit:0, human:0, key:0, scale:0, chain:[0], steps:STEPS,
@@ -191,8 +192,10 @@ const P = () => state.pats[pat];                       // the pattern being edit
 const playPat = () => state.pats[state.chain[chainPos % state.chain.length]] || state.pats[0];
 function syncPatternTracks(){
   state.pats.forEach(pt=>{
+    pt.accs = pt.accs || [];
     while(pt.steps.length < state.tracks.length) pt.steps.push(new Array(STEPS).fill(0));
-    pt.steps.length = state.tracks.length;
+    while(pt.accs.length  < state.tracks.length) pt.accs.push(new Array(STEPS).fill(0));
+    pt.steps.length = pt.accs.length = state.tracks.length;
   });
 }
 
@@ -219,7 +222,11 @@ function encode(s){
   const pats = s.pats.map(pt=>{
     const lanes = DRUMS.map(d=>pt.drums[d.id].join(''));
     while(lanes.length>1 && lanes[lanes.length-1]===emptyLane()) lanes.pop();
-    return lanes.join(',') + '~' + pt.steps.map(st=>st.map(hex3).join('')).join(';');
+    return lanes.join(',') + '~' + pt.steps.map((st,i)=>{
+      const notes = st.map(hex3).join('');
+      const acc = (pt.accs[i]||[]).some(Boolean) ? '=' + pt.accs[i].map(hex3).join('') : '';
+      return notes + acc;
+    }).join(';');
   });
   const empty = '0'.repeat(s.pats[0].drums.kick.length) + '~' +
                 s.tracks.map(()=>'000'.repeat(s.pats[0].drums.kick.length)).join(';');
@@ -249,7 +256,10 @@ function decode(str){
     const half = chunk.split('~'), pt = blankPat(s.tracks.length,s.steps);
     readDrums(pt,half[0],s.steps);
     (half[1]||'').split(';').forEach((st,i)=>{
-      if(i<pt.steps.length) pt.steps[i] = readSteps(st,s.steps);
+      if(i>=pt.steps.length) return;
+      const bits = st.split('=');
+      pt.steps[i] = readSteps(bits[0],s.steps);
+      pt.accs[i]  = readSteps(bits[1]||'',s.steps);
     });
     return pt;
   });
@@ -765,6 +775,7 @@ function fireStep(i,t,pt){
     const mask = pt.steps[ti] ? pt.steps[ti][i] : 0;
     if(tr.mute || !mask || !trackGain[ti] || !audible('t:'+ti)) return;
     const inst = INST[tr.inst] || INST.piano, dur = stepDur()*tr.len;
+    const acc = (pt.accs[ti] && pt.accs[ti][i]) || 0;
     const rows = [];
     for(let r=0;r<ROWS;r++) if(mask & (1<<r)) rows.push(r);
     // rows count downward, so the last row is the lowest note
@@ -773,7 +784,8 @@ function fireStep(i,t,pt){
     rows.forEach((r,n)=>{
       const at = Math.max(t + jitterT() + n*spread, ac.currentTime);
       const len = (tr.arp===1||tr.arp===2) && rows.length>1 ? dur/rows.length : dur;
-      inst.play(trackGain[ti],at,midiToFreq(rowMidi(tr,r)),len,0.75*inst.k*jitterV());
+      const vel = (acc & (1<<r)) ? 1 : 0.68;
+      inst.play(trackGain[ti],at,midiToFreq(rowMidi(tr,r)),len,vel*inst.k*jitterV());
     });
   });
 }
@@ -958,12 +970,13 @@ function paint(){
     const v = pt.drums[c.dataset.lane][+c.dataset.step];
     c.classList.toggle('on',v===1); c.classList.toggle('acc',v===2);
   });
-  const st=pt.steps[cur] || [];
+  const st=pt.steps[cur] || [], ax=pt.accs[cur] || [];
   // faint marks for what the other tracks are playing, so parts can be written against each other
   const ghost=pt.steps.reduce((m,s2,i)=>{ if(i!==cur) s2.forEach((v,j)=>m[j]|=v); return m; },new Array(STEPS).fill(0));
   document.querySelectorAll('[data-mrow]').forEach(c=>{
     const bit=1<<+c.dataset.mrow, i=+c.dataset.step;
-    c.classList.toggle('on', !!(st[i] & bit));
+    c.classList.toggle('on', !!(st[i] & bit) && !(ax[i] & bit));
+    c.classList.toggle('acc', !!(st[i] & bit) && !!(ax[i] & bit));
     c.classList.toggle('ghost', !(st[i] & bit) && !!(ghost[i] & bit));
   });
   document.querySelectorAll('[data-mute]').forEach(b=>{
@@ -1011,10 +1024,13 @@ document.body.addEventListener('click',e=>{
       if(d[i]) hit(lane,ac.currentTime,d[i]===2?1:0.6);
     }else{
       const tr=state.tracks[cur], i=+cell.dataset.step, r=+cell.dataset.mrow;
-      const ins=INST[tr.inst]||INST.piano, st=P().steps[cur];
-      st[i] ^= (1<<r);
-      if(st[i] & (1<<r))
-        ins.play(trackGain[cur],ac.currentTime,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75*ins.k);
+      const ins=INST[tr.inst]||INST.piano, st=P().steps[cur], ac2=P().accs[cur], bit=1<<r;
+      if(!(st[i] & bit)){ st[i] |= bit; ac2[i] &= ~bit; }          // off -> on
+      else if(!(ac2[i] & bit)){ ac2[i] |= bit; }                   // on -> accent
+      else { st[i] &= ~bit; ac2[i] &= ~bit; }                      // accent -> off
+      if(st[i] & bit)
+        ins.play(trackGain[cur],ac.currentTime,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,
+                 ((ac2[i] & bit) ? 1 : 0.68)*ins.k);
     }
     cell.classList.add('hit'); setTimeout(()=>cell.classList.remove('hit'),60);
     paint(); return;
@@ -1033,7 +1049,7 @@ document.body.addEventListener('click',e=>{
   if(e.target.id==='dup'){
     const src=P(), dst=(pat+1)%PATS;
     state.pats[dst]={drums:Object.fromEntries(DRUMS.map(d=>[d.id,src.drums[d.id].slice()])),
-                     steps:src.steps.map(st=>st.slice())};
+                     steps:src.steps.map(st=>st.slice()), accs:src.accs.map(a=>a.slice())};
     pat=dst; buildSong(); buildMelodic(); paint(); msg('copied to '+PAT_NAMES[dst]); return;
   }
   if(e.target.closest('[data-addtrack]')){
@@ -1055,7 +1071,7 @@ document.body.addEventListener('click',e=>{
   }
   if(e.target.id==='tdel'){
     state.tracks.splice(cur,1); solo.clear();
-    state.pats.forEach(pt=>pt.steps.splice(cur,1));
+    state.pats.forEach(pt=>{ pt.steps.splice(cur,1); pt.accs.splice(cur,1); });
     trackGain.forEach(g=>g.disconnect()); trackTone.forEach(f=>f.disconnect());
     trackGain=[]; trackTone=[];
     cur=Math.max(0,cur-1); build(); return;
@@ -1093,7 +1109,7 @@ document.body.addEventListener('change',e=>{
     state.steps=STEPS=n;
     state.pats.forEach(pt=>{
       DRUMS.forEach(d=>{ pt.drums[d.id]=fit(pt.drums[d.id]); });
-      pt.steps=pt.steps.map(fit);
+      pt.steps=pt.steps.map(fit); pt.accs=pt.accs.map(fit);
     });
     build(); msg(n+' steps');
   }
@@ -1199,6 +1215,7 @@ function randomize(){
       for(let n=0;n<notes;n++) mask |= 1 << Math.min(ROWS-1,Math.max(0,base+n*2));
       return mask;
     });
+    pt.accs[i] = pt.steps[i].map(m=>Math.random()<0.25 ? m : 0);
   });
   return s;
 }
@@ -1213,6 +1230,9 @@ function mk(bpm,swing,scale,kit,pats,chain){
     Object.keys(pd.drums||{}).forEach(k=>{ s.pats[pi].drums[k]=pd.drums[k].split('').map(c=>+c||0); });
     (pd.notes||[]).forEach((notes,ti)=>Object.keys(notes).forEach(st=>{
       s.pats[pi].steps[ti][+st] = notes[st].reduce((m,idx)=>m|(1<<(ROWS-1-idx)),0);
+    }));
+    (pd.accents||[]).forEach((notes,ti)=>Object.keys(notes||{}).forEach(st=>{
+      s.pats[pi].accs[ti][+st] = notes[st].reduce((m,idx)=>m|(1<<(ROWS-1-idx)),0);
     }));
   });
   s.chain=readChain(chain||'0');
@@ -1351,6 +1371,14 @@ if(location.search.indexOf('test=1')>-1){
   const t=blankTrack('piano',0,1);
   eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
   eq(hex3(0xfff),'fff','mask packs');
+  const withAcc=decode(encode(state));
+  withAcc.pats[0].steps[0][0]=1<<5; withAcc.pats[0].accs[0][0]=1<<5;
+  const encAcc=encode(withAcc);
+  eq(encAcc.indexOf('=')>0,true,'accents are written into the string');
+  eq(decode(encAcc).pats[0].accs[0][0],1<<5,'accents survive the round trip');
+  eq(encode(decode(encAcc)),encAcc,'accented song is canonical');
+  const noAcc=decode(encode(state));
+  eq(encode(noAcc).indexOf('=')<0,true,'a song with no accents pays nothing for them');
   eq(audible('d:kick'),true,'nothing soloed means everything sounds');
   solo.add('d:snare');
   eq([audible('d:kick'),audible('d:snare')],[false,true],'solo silences the rest');
