@@ -460,7 +460,10 @@ function driveCurve(k){
 function pluck(bus,t,f,dur,vel,o){
   o=o||{};
   const s=ac.createBufferSource(); s.buffer=ksBuf(o.damp||0.996);
-  s.playbackRate.value = f/220;
+  if(o.glide){
+    s.playbackRate.setValueAtTime(f*o.glide/220,t);
+    s.playbackRate.exponentialRampToValueAtTime(f/220,t+0.09);
+  } else s.playbackRate.value = f/220;
   const lp=ac.createBiquadFilter(); lp.type='lowpass';
   lp.frequency.value=Math.min(14000,f*(o.bright||14)); lp.Q.value=0.7;
   const g=ac.createGain();
@@ -653,6 +656,45 @@ const INST = {
   psyn:    {k:0.47, g:'SYNTH', nm:'SYNTH PLUCK',play:(b,t,f,d,v)=>stack(b,t,f,Math.min(d,0.3),v*0.6,{det:[-4,4],bright:12,q:6,sweep:1,atk:0.004,rel:0.12})},
   chip:    {k:1.59, g:'SYNTH', nm:'CHIPTUNE',   play:(b,t,f,d,v)=>additive(b,t,f,d,v*0.35,[[1,1],[2,0.3],[3,0.15]],{type:'square',atk:0.002,rel:0.05})},
   fmkeys:  {k:1.15, g:'SYNTH', nm:'FM KEYS',    play:(b,t,f,d,v)=>fm(b,t,f,d,v*0.7,{ratio:3.5,index:3,mdk:0.3,dk:1})},
+
+  /* WORLD */
+  shamisen: {k:1.04, g:'WORLD', nm:'SHAMISEN',   play:(b,t,f,d,v)=>pluck(b,t,f,d,v*0.8,{damp:0.992,bright:20,drive:5,rel:0.3,glide:0.97})},
+  dulcimer: {k:1.42, g:'WORLD', nm:'DULCIMER',   play:(b,t,f,d,v)=>{
+              pluck(b,t,f,d,v*0.5,{damp:0.9985,bright:24,rel:0.7});
+              pluck(b,t+0.006,f*1.003,d,v*0.45,{damp:0.9985,bright:24,rel:0.7}); }},
+  zither:   {k:1.66, g:'WORLD', nm:'AUTOHARP',   play:(b,t,f,d,v)=>[0,0.004,0.009].forEach((o,i)=>
+              pluck(b,t+o,f*(1+i*0.002),d,v*0.35,{damp:0.9986,bright:26,rel:0.9}))},
+  slideguit:{k:1.01, g:'WORLD', nm:'SLIDE GUITAR',play:(b,t,f,d,v)=>pluck(b,t,f,d,v*0.9,{damp:0.9975,bright:13,rel:0.5,glide:0.9})},
+  twelve:   {k:1.12, g:'WORLD', nm:'12-STRING',  play:(b,t,f,d,v)=>{
+              pluck(b,t,f,d,v*0.7,{damp:0.996,bright:16,rel:0.5});
+              pluck(b,t+0.01,f*2.004,d*0.7,v*0.3,{damp:0.996,bright:20,rel:0.4}); }},
+  gamelan:  {k:0.69, g:'WORLD', nm:'GAMELAN',    play:(b,t,f,d,v)=>{
+              decayStack(b,t,f,Math.max(d,0.8),v*0.6,[[1,1,1],[2.4,0.5,0.6],[5.1,0.18,0.3]]);
+              decayStack(b,t,f*1.006,Math.max(d,0.8),v*0.3,[[1,1,1]]); }},
+  hang:     {k:0.96, g:'WORLD', nm:'HANG DRUM',  play:(b,t,f,d,v)=>decayStack(b,t,f,Math.max(d,0.7),v*0.7,
+              [[1,1,1.3],[2,0.35,0.6],[3,0.14,0.4]],{atk:0.008})},
+  gong:     {k:2.5, g:'WORLD', nm:'GONG',       play:(b,t,f,d,v)=>metal(b,t,Math.max(d,2.4),v*0.1,f*0.4,220)},
+  tabla:    {k:1.01, g:'WORLD', nm:'TABLA',      play:(b,t,f,d,v)=>{
+              tone(b,t,f,f*0.72,Math.min(d,0.35),v*0.8);
+              noise(b,t,0.03,v*0.3,'bandpass',Math.min(9000,f*6),2); }},
+  didge:    {k:0.88, g:'WORLD', nm:'DIDGERIDOO', play:(b,t,f,d,v)=>stack(b,t,f/2,d,v*0.6,
+              {det:[0],bright:5,q:6,wob:0.45,wobRate:5.5,atk:0.06,rel:0.2,breath:0.2})},
+  bagpipe:  {k:0.86, g:'WORLD', nm:'BAGPIPES',   play:(b,t,f,d,v)=>{
+              stack(b,t,f,d,v*0.4,{det:[-6,6],bright:9,q:5,atk:0.03,rel:0.08,vib:4,vibRate:6});
+              stack(b,t,f/2*1.5,d,v*0.2,{det:[0],bright:5,q:3,atk:0.03,rel:0.08}); }},
+  jawharp:  {k:0.64, g:'WORLD', nm:'JAW HARP',   play:(b,t,f,d,v)=>stack(b,t,f,Math.min(d,0.4),v*0.5,
+              {det:[0],bright:16,q:14,sweep:1,wob:0.5,wobRate:14,atk:0.003,rel:0.1})},
+
+  /* more WINDS */
+  piccolo:  {k:1.94, g:'WINDS', nm:'PICCOLO',    play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.4,{det:[0],type:'sine',bright:6,atk:0.05,rel:0.15,vib:8,vibRate:5.5,vibDelay:0.2,breath:0.2})},
+  recorder: {k:1.68, g:'WINDS', nm:'RECORDER',   play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.45,{det:[0],type:'sine',bright:5,atk:0.045,rel:0.12,vib:3,vibDelay:0.35,breath:0.38})},
+  ocarina:  {k:1.46, g:'WINDS', nm:'OCARINA',    play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[0],type:'sine',bright:2.6,atk:0.06,rel:0.18,vib:6,vibDelay:0.3,breath:0.16})},
+  bassoon:  {k:0.56, g:'WINDS', nm:'BASSOON',    play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.6,{det:[-2,2],bright:3.6,q:4,atk:0.08,rel:0.2,vib:4,vibDelay:0.3,breath:0.08})},
+  corangl:  {k:1.01, g:'WINDS', nm:'ENGLISH HORN',play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[0],bright:8,q:7,atk:0.06,rel:0.18,vib:6,vibRate:5.2,vibDelay:0.25,breath:0.07})},
+
+  /* more SYNTH */
+  theremin: {k:1.5, g:'SYNTH', nm:'THEREMIN',   play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[0],type:'sine',bright:3,atk:0.13,rel:0.25,vib:14,vibRate:6,vibDelay:0.1})},
+  glassharp:{k:1.4, g:'SYNTH', nm:'GLASS HARP', play:(b,t,f,d,v)=>additive(b,t,f,d,v*0.5,[[1,1],[2,0.14],[3,0.05],[4,0.02]],{atk:0.3,rel:0.9,spread:4})},
 
   /* VOICE */
   choir:   {k:2.5, g:'VOICE', nm:'CHOIR AAH',  play:(b,t,f,d,v)=>formant(b,t,f,d,v,[[700,1],[1150,0.5],[2600,0.22]],0.25,0.8)},

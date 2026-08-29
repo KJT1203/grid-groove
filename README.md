@@ -4,7 +4,7 @@ A drum machine, an instrument sequencer and a little song arranger, living in on
 
 **Live:** https://kjt1203.github.io/grid-groove/
 
-![no dependencies](https://img.shields.io/badge/deps-0-ff3d81) ![one file](https://img.shields.io/badge/files-1-39d9ff) ![57 instruments](https://img.shields.io/badge/instruments-57-ffd166)
+![no dependencies](https://img.shields.io/badge/deps-0-ff3d81) ![one file](https://img.shields.io/badge/files-1-39d9ff) ![76 instruments](https://img.shields.io/badge/instruments-76-ffd166)
 
 ## Use it
 
@@ -20,7 +20,7 @@ A drum machine, an instrument sequencer and a little song arranger, living in on
 
 ## The instruments
 
-57 of them, all synthesised, grouped in the picker:
+76 of them, all synthesised, grouped in the picker:
 
 | Family | |
 |---|---|
@@ -29,9 +29,10 @@ A drum machine, an instrument sequencer and a little song arranger, living in on
 | **Keys** | piano, rhodes, harpsichord, clavinet, church organ, rotary organ, reed organ, accordion |
 | **Strings** | strings, violin, viola, cello, tremolo strings |
 | **Brass** | trumpet, muted trumpet, french horn, trombone, brass section |
-| **Winds** | flute, pan flute, clarinet, oboe, saxophone, harmonica |
+| **Winds** | flute, piccolo, pan flute, recorder, ocarina, clarinet, oboe, english horn, bassoon, saxophone, harmonica |
 | **Tuned perc** | marimba, xylophone, vibraphone, glockenspiel, music box, kalimba, steel drum, bell, tubular bells, timpani |
-| **Synth** | synth lead, supersaw, warm pad, synth pluck, chiptune, FM keys |
+| **Synth** | synth lead, supersaw, warm pad, synth pluck, chiptune, FM keys, theremin, glass harp |
+| **World** | shamisen, dulcimer, autoharp, slide guitar, 12-string, gamelan, hang drum, gong, tabla, didgeridoo, bagpipes, jaw harp |
 | **Voice** | choir aah, choir ooh |
 
 They are honest synth approximations, not sampled recordings — a synthesised violin is a filtered saw with vibrato, not a violin. Within that limit they are built from the real mechanism of each sound.
