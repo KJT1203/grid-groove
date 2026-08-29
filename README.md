@@ -8,13 +8,15 @@ A drum machine, an instrument sequencer and a little song arranger, living in on
 
 ## Use it
 
-**Song** — four patterns, `A` to `D`. Click one to edit it, type the play order into CHAIN (`AAAB` plays A three times then B), DUPLICATE copies the pattern you are on into the next slot.
+**Song** — four patterns, `A` to `D`. Click one to edit it, type the play order into CHAIN (`AAAB` plays A three times then B), DUPLICATE copies the pattern you are on into the next slot, STEPS sets how long a pattern is (8 to 32).
 
-**Drums** — 12 lanes. Click a cell to cycle it: off → on → accent. `M` mutes a lane, the small slider sets its level.
+**Drums** — 12 lanes and 5 kits (classic, 808, 909, lo-fi, acoustic). Click a cell to cycle it: off → on → accent. `M` mutes a lane, shift-click it to solo, the small slider sets its level.
 
-**Instruments** — up to 8 tracks, each with its own instrument, octave, note length and level. Click cells in the note grid to place notes; a column can hold as many as you like, so chords work. Notes are locked to the KEY and SCALE at the top, so nothing lands wrong.
+**Instruments** — up to 8 tracks, each with its own instrument, octave, note length, level and TONE. Click cells in the note grid to place notes; a column can hold as many as you like, so chords work. Notes are locked to the KEY and SCALE at the top, so nothing lands wrong. Notes belonging to the other tracks show as faint ghosts, so parts can be written against each other.
 
-**Everything else** — SWING pushes off-beat 16ths late, SPACE is the reverb, RANDOM rolls a new version of the current pattern, COPY LINK puts the whole song in the URL, EXPORT WAV renders 1–8 bars of the chain to a file. Space bar plays and stops. Your work autosaves to localStorage.
+**Everything else** — SWING pushes off-beat 16ths late, SPACE is the reverb, ECHO is a tempo-synced ping-pong delay, RANDOM rolls a new version of the current pattern, COPY LINK puts the whole song in the URL, EXPORT WAV renders 1–8 passes of the chain to a file.
+
+**Keys** — space plays and stops, `1`–`4` pick a pattern, ctrl+Z / ctrl+shift+Z undo and redo. Everything autosaves to localStorage.
 
 ## The instruments
 
@@ -36,15 +38,15 @@ They are honest synth approximations, not sampled recordings — a synthesised v
 
 ## How it works
 
-- **Scheduling** — a `setInterval` runs every 25 ms and schedules any step falling inside the next 120 ms directly on the audio clock (`ac.currentTime`). JS timers are jittery; the audio clock is not, so the groove stays tight even when the page is busy. `requestAnimationFrame` only paints the playhead.
-- **Plucked strings** are Karplus-Strong: a ring buffer of noise, low-pass filtered as it recirculates, rendered once at 220 Hz and re-pitched with `playbackRate`. Damping makes the difference between a banjo and a harp.
+- **Scheduling** — a `setInterval` runs every 25 ms and schedules any step falling inside the next 120 ms directly on the audio clock (`ac.currentTime`). JS timers are jittery; the audio clock is not, so the groove stays tight even when the page is busy. `requestAnimationFrame` only paints the playhead and the scope.
+- **Plucked strings** are Karplus-Strong: a ring buffer of noise, low-pass filtered as it recirculates, rendered once at 220 Hz and re-pitched with `playbackRate`. Damping is the difference between a banjo and a harp.
 - **Bowed and blown** instruments are detuned oscillators through a resonant lowpass with an attack/hold/release envelope, a delayed vibrato LFO, and a little filtered noise for bow or breath. Brass adds a filter sweep so the tone opens as it starts.
 - **Organs** are additive — one sine per drawbar. **Rhodes, bells and chimes** are two-operator FM. **Piano, marimba and music box** give every partial its own decay. **Choir** runs saws through three parallel bandpass formants.
-- **Drums** are oscillators with pitch envelopes (kick, tom, conga, cowbell), filtered noise (snare, clap, hats, shaker) and six inharmonic squares for the ride.
+- **Drums** are oscillators with pitch envelopes (kick, tom, conga, cowbell), filtered noise (snare, clap, hats, shaker) and six inharmonic squares for the ride. A kit is three multipliers over those voices — pitch, decay and brightness — so the whole set re-tunes without a second voice bank.
 - **Loudness** — every instrument carries a measured trim so switching between them does not jump in volume, and the mix runs through a fixed headroom gain into a compressor.
-- **Reverb** is a convolver fed by a generated noise impulse, on a send, with drums going in quieter than instruments.
+- **Effects** — reverb is a convolver fed by a generated noise impulse; echo is a dotted-eighth delay pair, left feeding right and right feeding back through a lowpass so the tail darkens and alternates channels. Both are sends, with drums going in quieter than instruments.
 - **Export** rebuilds the identical graph inside an `OfflineAudioContext`, renders faster than realtime and encodes 16-bit stereo PCM by hand.
-- **Songs are a string**: `v3|bpm|swing|key|scale|reverb|chain|kit|patterns`, with each pattern's notes packed as 12-bit hex masks. That same string is the URL hash and the localStorage value. Old `v1` and `v2` links still load.
+- **Songs are a string**: `v3|bpm|swing|key|scale|reverb|chain|kit|patterns|echo|drumkit`, with each pattern's notes packed as 12-bit hex masks. That same string is the URL hash, the localStorage value and the undo history. Old `v1` and `v2` links still load.
 
 ## Run locally
 
@@ -52,6 +54,6 @@ They are honest synth approximations, not sampled recordings — a synthesised v
 npx -y serve . -l 4190
 ```
 
-Then open http://localhost:4190. Add `?test=1` to run the built-in checks — pattern round-trips, old-link upgrades, chain parsing, swing timing, and an offline render that must come out audible.
+Then open http://localhost:4190. Add `?test=1` to run the built-in checks — pattern round-trips, old-link upgrades, chain parsing, step-count changes, undo, swing timing, and an offline render that must come out audible.
 
 Built for fun. MIT.

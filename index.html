@@ -46,6 +46,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 }
 .cell.root{background:#161d2f}
 .cell.on{background:var(--c);box-shadow:0 0 10px -2px var(--c)}
+.cell.ghost{background:#1d2740;border-color:#2e3a55}
 .cell.acc{background:var(--c);box-shadow:0 0 16px 0 var(--c);border-color:#ffffff66}
 .cell.hit{transform:scale(.88)}
 .col-now{outline:1px solid var(--cool);outline-offset:1px}
@@ -64,6 +65,14 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .tctl .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
 #scope{width:100%;height:48px;display:block;margin-bottom:14px;border-radius:8px;
   background:linear-gradient(180deg,#0f131d,#141824);border:1px solid var(--line)}
+@media (max-width:700px){
+  /* give the grid the space the mixer strip was using */
+  .row,.steps{grid-template-columns:86px repeat(var(--cols,16),1fr);
+    min-width:calc(86px + var(--cols,16) * 30px)}
+  .lane input[type=range]{display:none}
+  .lane .nm{width:44px;font-size:10px}
+  h1{font-size:16px;letter-spacing:3px}
+}
 footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #msg{color:var(--cool);font-size:11px;letter-spacing:1px}
 </style>
@@ -885,8 +894,12 @@ function paint(){
     c.classList.toggle('on',v===1); c.classList.toggle('acc',v===2);
   });
   const st=pt.steps[cur] || [];
+  // faint marks for what the other tracks are playing, so parts can be written against each other
+  const ghost=pt.steps.reduce((m,s2,i)=>{ if(i!==cur) s2.forEach((v,j)=>m[j]|=v); return m; },new Array(STEPS).fill(0));
   document.querySelectorAll('[data-mrow]').forEach(c=>{
-    c.classList.toggle('on', !!(st[+c.dataset.step] & (1<<+c.dataset.mrow)));
+    const bit=1<<+c.dataset.mrow, i=+c.dataset.step;
+    c.classList.toggle('on', !!(st[i] & bit));
+    c.classList.toggle('ghost', !(st[i] & bit) && !!(ghost[i] & bit));
   });
   document.querySelectorAll('[data-mute]').forEach(b=>{
     b.classList.toggle('on',!!state.mute[b.dataset.mute]);
