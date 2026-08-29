@@ -1,28 +1,50 @@
 # Grid Groove
 
-A 16-step drum machine + bassline sequencer that lives in one HTML file. No samples, no libraries, no build step — every sound is synthesised live with the Web Audio API.
+A drum machine, an instrument sequencer and a little song arranger, living in one HTML file. No samples, no libraries, no build step — every sound is synthesised live with the Web Audio API.
 
 **Live:** https://kjt1203.github.io/grid-groove/
 
-![grid + bass sequencer](https://img.shields.io/badge/deps-0-ff3d81) ![one file](https://img.shields.io/badge/files-1-39d9ff)
+![no dependencies](https://img.shields.io/badge/deps-0-ff3d81) ![one file](https://img.shields.io/badge/files-1-39d9ff) ![57 instruments](https://img.shields.io/badge/instruments-57-ffd166)
 
 ## Use it
 
-- **Click a drum cell** to cycle it: off → on → accent (accents hit louder).
-- **Click a bass cell** to place a note; one note per column, click again to clear.
-- **Space** or the PLAY button starts/stops.
-- **M** mutes a lane, the small slider next to it sets its level.
-- **SWING** pushes every off-beat 16th late — 0 is straight, ~20 is a shuffle.
-- **COPY LINK** puts the whole pattern in the URL. Paste it anywhere, it loads back.
-- Patterns also autosave to localStorage, so a reload keeps what you made.
+**Song** — four patterns, `A` to `D`. Click one to edit it, type the play order into CHAIN (`AAAB` plays A three times then B), DUPLICATE copies the pattern you are on into the next slot.
+
+**Drums** — 12 lanes. Click a cell to cycle it: off → on → accent. `M` mutes a lane, the small slider sets its level.
+
+**Instruments** — up to 8 tracks, each with its own instrument, octave, note length and level. Click cells in the note grid to place notes; a column can hold as many as you like, so chords work. Notes are locked to the KEY and SCALE at the top, so nothing lands wrong.
+
+**Everything else** — SWING pushes off-beat 16ths late, SPACE is the reverb, RANDOM rolls a new version of the current pattern, COPY LINK puts the whole song in the URL, EXPORT WAV renders 1–8 bars of the chain to a file. Space bar plays and stops. Your work autosaves to localStorage.
+
+## The instruments
+
+57 of them, all synthesised, grouped in the picker:
+
+| Family | |
+|---|---|
+| **Bass** | bass synth, sub bass, wobble bass, bass guitar, double bass, tuba |
+| **Plucked** | guitar, e-guitar, ukulele, mandolin, banjo, sitar, koto, harp, pizzicato |
+| **Keys** | piano, rhodes, harpsichord, clavinet, church organ, rotary organ, reed organ, accordion |
+| **Strings** | strings, violin, viola, cello, tremolo strings |
+| **Brass** | trumpet, muted trumpet, french horn, trombone, brass section |
+| **Winds** | flute, pan flute, clarinet, oboe, saxophone, harmonica |
+| **Tuned perc** | marimba, xylophone, vibraphone, glockenspiel, music box, kalimba, steel drum, bell, tubular bells, timpani |
+| **Synth** | synth lead, supersaw, warm pad, synth pluck, chiptune, FM keys |
+| **Voice** | choir aah, choir ooh |
+
+They are honest synth approximations, not sampled recordings — a synthesised violin is a filtered saw with vibrato, not a violin. Within that limit they are built from the real mechanism of each sound.
 
 ## How it works
 
 - **Scheduling** — a `setInterval` runs every 25 ms and schedules any step falling inside the next 120 ms directly on the audio clock (`ac.currentTime`). JS timers are jittery; the audio clock is not, so the groove stays tight even when the page is busy. `requestAnimationFrame` only paints the playhead.
-- **Drums** — twelve lanes, all synthesised. Oscillators with pitch/gain envelopes (kick, tom, conga, rim, cowbell), filtered white noise from a 2-second buffer (snare, clap, hats, shaker), six inharmonic squares through a band+highpass for the ride, and a plucked Cm triad for the stab. The clap is three short noise bursts a few milliseconds apart plus a tail.
-- **Lanes** — kick, snare, clap, hat, open hat, tom, rim, ride, cowbell, conga, shaker, stab.
-- **Bass** — saw + square an octave down, through a lowpass whose cutoff sweeps down over the note. Notes are locked to C minor pentatonic so nothing lands wrong.
-- **Patterns** are a plain string: `v1|bpm|swing|lane digits per drum|bass row per step`. That same string is the URL hash and the localStorage value.
+- **Plucked strings** are Karplus-Strong: a ring buffer of noise, low-pass filtered as it recirculates, rendered once at 220 Hz and re-pitched with `playbackRate`. Damping makes the difference between a banjo and a harp.
+- **Bowed and blown** instruments are detuned oscillators through a resonant lowpass with an attack/hold/release envelope, a delayed vibrato LFO, and a little filtered noise for bow or breath. Brass adds a filter sweep so the tone opens as it starts.
+- **Organs** are additive — one sine per drawbar. **Rhodes, bells and chimes** are two-operator FM. **Piano, marimba and music box** give every partial its own decay. **Choir** runs saws through three parallel bandpass formants.
+- **Drums** are oscillators with pitch envelopes (kick, tom, conga, cowbell), filtered noise (snare, clap, hats, shaker) and six inharmonic squares for the ride.
+- **Loudness** — every instrument carries a measured trim so switching between them does not jump in volume, and the mix runs through a fixed headroom gain into a compressor.
+- **Reverb** is a convolver fed by a generated noise impulse, on a send, with drums going in quieter than instruments.
+- **Export** rebuilds the identical graph inside an `OfflineAudioContext`, renders faster than realtime and encodes 16-bit stereo PCM by hand.
+- **Songs are a string**: `v3|bpm|swing|key|scale|reverb|chain|kit|patterns`, with each pattern's notes packed as 12-bit hex masks. That same string is the URL hash and the localStorage value. Old `v1` and `v2` links still load.
 
 ## Run locally
 
@@ -30,6 +52,6 @@ A 16-step drum machine + bassline sequencer that lives in one HTML file. No samp
 npx -y serve . -l 4190
 ```
 
-Then open http://localhost:4190. Add `?test=1` to run the built-in self-check (pattern round-trip, clamping, swing timing) — it prints to the console and shows a banner.
+Then open http://localhost:4190. Add `?test=1` to run the built-in checks — pattern round-trips, old-link upgrades, chain parsing, swing timing, and an offline render that must come out audible.
 
 Built for fun. MIT.
