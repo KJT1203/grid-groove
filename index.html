@@ -35,9 +35,10 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .row{display:grid;grid-template-columns:150px repeat(var(--cols,16),1fr);gap:4px;align-items:center;margin-bottom:4px;
   min-width:calc(150px + var(--cols,16) * 38px)}
 .lane{display:flex;gap:6px;align-items:center;font-size:11px;letter-spacing:1px}
-.lane .nm{width:52px;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+.lane .nm{width:62px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lane .mute{padding:2px 6px;font-size:10px;border-radius:4px}
 .lane .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
+.mute.solo{background:#0d2c33;border-color:var(--cool);color:var(--cool)}
 .lane input[type=range]{width:52px}
 .cell{
   height:24px;border-radius:5px;border:1px solid var(--line);background:#0f131d;cursor:pointer;
@@ -61,6 +62,8 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .tctl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .tctl button{padding:4px 8px;font-size:11px}
 .tctl .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
+#scope{width:100%;height:48px;display:block;margin-bottom:14px;border-radius:8px;
+  background:linear-gradient(180deg,#0f131d,#141824);border:1px solid var(--line)}
 footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #msg{color:var(--cool);font-size:11px;letter-spacing:1px}
 </style>
@@ -79,6 +82,8 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     <label>SCALE <select id="scale"></select></label>
   </div>
 </header>
+
+<canvas id="scope" width="1400" height="48"></canvas>
 
 <section id="song"></section>
 
@@ -104,7 +109,7 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> BARS</label>
   <button id="wav">EXPORT WAV</button>
   <span id="msg"></span>
-  <span style="color:var(--dim);font-size:10px;letter-spacing:1px">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo</span>
+  <span style="color:var(--dim);font-size:10px;letter-spacing:1px">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo &middot; SHIFT+click M to solo</span>
 </footer>
 
 <script>
@@ -154,6 +159,8 @@ const blank = () => ({
   pats:Array.from({length:PATS},()=>blankPat(3))
 });
 let state = blank(), cur = 0, pat = 0, chainPos = 0;
+const solo = new Set();                    // 'd:kick' / 't:2'; live mixing only, not part of the song
+const audible = key => !solo.size || solo.has(key);
 const P = () => state.pats[pat];                       // the pattern being edited
 const playPat = () => state.pats[state.chain[chainPos % state.chain.length]] || state.pats[0];
 function syncPatternTracks(){
@@ -275,7 +282,24 @@ function upgradeV2(p){
 
 /* ---------- audio graph ---------- */
 let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], noiseBuf, ksCache={};
-let dlyL, dlyR, echoGain, sendEcho, sendEchoD;
+let dlyL, dlyR, echoGain, sendEcho, sendEchoD, scopeAn, scopeBuf;
+function drawScope(){
+  const cv=document.getElementById('scope'), g=cv.getContext('2d');
+  g.clearRect(0,0,cv.width,cv.height);
+  if(!scopeAn) return;
+  scopeBuf = scopeBuf || new Float32Array(scopeAn.fftSize);
+  scopeAn.getFloatTimeDomainData(scopeBuf);
+  const grad=g.createLinearGradient(0,0,cv.width,0);
+  grad.addColorStop(0,'#ff3d81'); grad.addColorStop(0.5,'#e0aaff'); grad.addColorStop(1,'#39d9ff');
+  g.strokeStyle=grad; g.lineWidth=2; g.beginPath();
+  const mid=cv.height/2, n=scopeBuf.length;
+  for(let x=0;x<cv.width;x++){
+    const v=scopeBuf[Math.floor(x/cv.width*n)];
+    const y=mid - Math.max(-1,Math.min(1,v))*(mid-3);
+    x ? g.lineTo(x,y) : g.moveTo(x,y);
+  }
+  g.stroke();
+}
 function setEchoTime(){
   if(!dlyL) return;
   const t = 60/state.bpm*0.75;              // dotted eighth
@@ -293,6 +317,7 @@ function buildGraph(ctx){
   const head = ac.createGain(); head.gain.value = 0.45; head.connect(comp);
   master = ac.createGain(); master.gain.value = state.vol/100; master.connect(head);
 
+  scopeAn = ac.createAnalyser(); scopeAn.fftSize = 2048; master.connect(scopeAn);
   const verb = ac.createConvolver(); verb.buffer = makeIR(2.4,2.6);
   wetGain = ac.createGain(); wetGain.gain.value = state.wet/100;
   verb.connect(wetGain).connect(master);
@@ -649,11 +674,11 @@ function fireStep(i,t,pt){
   pt = pt || playPat();
   DRUMS.forEach(d=>{
     const v = pt.drums[d.id][i];
-    if(v && !state.mute[d.id]) hit(d.id,t,v===2?1:0.6);
+    if(v && !state.mute[d.id] && audible('d:'+d.id)) hit(d.id,t,v===2?1:0.6);
   });
   state.tracks.forEach((tr,ti)=>{
     const mask = pt.steps[ti] ? pt.steps[ti][i] : 0;
-    if(tr.mute || !mask || !trackGain[ti]) return;
+    if(tr.mute || !mask || !trackGain[ti] || !audible('t:'+ti)) return;
     const inst = INST[tr.inst] || INST.piano;
     for(let r=0;r<ROWS;r++)
       if(mask & (1<<r)) inst.play(trackGain[ti],t,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75*inst.k);
@@ -685,6 +710,7 @@ function stop(){
   b.classList.remove('on'); b.innerHTML='&#9654; PLAY';
   document.querySelectorAll('.col-now').forEach(e=>e.classList.remove('col-now'));
   document.querySelectorAll('.live').forEach(e=>e.classList.remove('live'));
+  const cv=document.getElementById('scope'); cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
 }
 let shownPat=-1;
 function draw(){
@@ -694,6 +720,7 @@ function draw(){
     b.classList.toggle('live', playing && +b.dataset.pat === state.chain[shownPat % state.chain.length]));
   document.querySelectorAll('.col-now').forEach(e=>e.classList.remove('col-now'));
   if(shown>=0) document.querySelectorAll('[data-step="'+shown+'"]').forEach(e=>e.classList.add('col-now'));
+  drawScope();
   requestAnimationFrame(draw);
 }
 
@@ -840,7 +867,11 @@ function paint(){
   });
   document.querySelectorAll('[data-mute]').forEach(b=>{
     b.classList.toggle('on',!!state.mute[b.dataset.mute]);
+    b.classList.toggle('solo',solo.has('d:'+b.dataset.mute));
+    b.title='click to mute, shift-click to solo';
   });
+  const tm=$('tmute');
+  if(tm){ tm.classList.toggle('solo',solo.has('t:'+cur)); tm.title='click to mute, shift-click to solo'; }
   save();
 }
 let history=[], future=[], lastSaved=null, restoring=false;
@@ -888,7 +919,12 @@ document.body.addEventListener('click',e=>{
     paint(); return;
   }
   const m=e.target.closest('[data-mute]');
-  if(m){ state.mute[m.dataset.mute]^=1; paint(); return; }
+  if(m){
+    const key='d:'+m.dataset.mute;
+    if(e.shiftKey){ solo.has(key) ? solo.delete(key) : solo.add(key); }
+    else state.mute[m.dataset.mute]^=1;
+    paint(); return;
+  }
   const tab=e.target.closest('[data-tab]');
   if(tab){ cur=+tab.dataset.tab; buildMelodic(); paint(); return; }
   const pb=e.target.closest('[data-pat]');
@@ -910,9 +946,14 @@ document.body.addEventListener('click',e=>{
     tr.oct=Math.min(3,Math.max(-3,tr.oct + (+oct.dataset.oct)));
     buildMelodic(); paint(); return;
   }
-  if(e.target.id==='tmute'){ state.tracks[cur].mute^=1; syncTrackGains(); buildMelodic(); paint(); return; }
+  if(e.target.id==='tmute'){
+    const key='t:'+cur;
+    if(e.shiftKey){ solo.has(key) ? solo.delete(key) : solo.add(key); }
+    else state.tracks[cur].mute^=1;
+    syncTrackGains(); buildMelodic(); paint(); return;
+  }
   if(e.target.id==='tdel'){
-    state.tracks.splice(cur,1);
+    state.tracks.splice(cur,1); solo.clear();
     state.pats.forEach(pt=>pt.steps.splice(cur,1));
     trackGain.forEach(g=>g.disconnect()); trackGain=[];
     cur=Math.max(0,cur-1); build(); return;
@@ -1152,6 +1193,10 @@ if(location.search.indexOf('test=1')>-1){
   const t=blankTrack('piano',0,1);
   eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
   eq(hex3(0xfff),'fff','mask packs');
+  eq(audible('d:kick'),true,'nothing soloed means everything sounds');
+  solo.add('d:snare');
+  eq([audible('d:kick'),audible('d:snare')],[false,true],'solo silences the rest');
+  solo.clear();
   eq(INST_KEYS.every(k=>typeof INST[k].play==='function' && INST[k].k>0 && INST[k].g),true,'every instrument is playable and trimmed');
   state.bpm=120; state.swing=50;
   eq(+stepTime(0,1).toFixed(4), +(stepDur()*0.5).toFixed(4),'swing offsets odd steps');
