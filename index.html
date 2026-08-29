@@ -17,11 +17,12 @@ body{
 }
 h1{font-size:20px;letter-spacing:6px;margin:0}
 h1 span{color:var(--hot)}
-header{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-bottom:16px}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:16px}
 .transport{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
 label{display:flex;gap:8px;align-items:center;color:var(--dim);font-size:11px;letter-spacing:1px}
-input[type=range]{width:110px;accent-color:var(--hot)}
-output{color:var(--text);min-width:34px;display:inline-block}
+input[type=range]{width:100px;accent-color:var(--hot)}
+output{color:var(--text);min-width:30px;display:inline-block}
+select{background:#0f131d;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:11px}
 button{
   background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;
   padding:7px 12px;font:inherit;font-size:12px;letter-spacing:1px;cursor:pointer;
@@ -31,21 +32,29 @@ button:hover{border-color:var(--hot)}
 #play.on{background:var(--hot);color:#0b0d12}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;overflow-x:auto}
 .legend{color:var(--dim);font-size:10px;letter-spacing:2px;margin-bottom:8px}
-.row{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;align-items:center;margin-bottom:4px;min-width:720px}
+.row{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;align-items:center;margin-bottom:4px;min-width:760px}
 .lane{display:flex;gap:6px;align-items:center;font-size:11px;letter-spacing:1px}
-.lane .nm{width:46px;color:var(--dim)}
+.lane .nm{width:52px;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
 .lane .mute{padding:2px 6px;font-size:10px;border-radius:4px}
 .lane .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
-.lane input[type=range]{width:56px}
+.lane input[type=range]{width:52px}
 .cell{
-  height:26px;border-radius:5px;border:1px solid var(--line);background:#0f131d;cursor:pointer;
+  height:24px;border-radius:5px;border:1px solid var(--line);background:#0f131d;cursor:pointer;
   transition:transform .05s;
 }
+.cell.root{background:#161d2f}
 .cell.on{background:var(--c);box-shadow:0 0 10px -2px var(--c)}
 .cell.acc{background:var(--c);box-shadow:0 0 16px 0 var(--c);border-color:#ffffff66}
 .cell.hit{transform:scale(.88)}
 .col-now{outline:1px solid var(--cool);outline-offset:1px}
-.steps{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;min-width:720px;margin-bottom:6px;color:var(--dim);font-size:10px;text-align:center}
+.steps{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;min-width:760px;margin-bottom:6px;color:var(--dim);font-size:10px;text-align:center}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.tab{padding:5px 10px;font-size:11px;border-radius:6px;background:#0f131d}
+.tab.on{border-color:var(--c);color:var(--c);box-shadow:0 0 12px -4px var(--c)}
+.tab.muted{opacity:.45;text-decoration:line-through}
+.tctl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.tctl button{padding:4px 8px;font-size:11px}
+.tctl .mute.on{background:#3a1020;border-color:var(--hot);color:var(--hot)}
 footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #msg{color:var(--cool);font-size:11px;letter-spacing:1px}
 </style>
@@ -57,7 +66,10 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     <button id="play">&#9654; PLAY</button>
     <label>BPM <input id="bpm" type="range" min="60" max="180" value="112"><output id="bpmv">112</output></label>
     <label>SWING <input id="swing" type="range" min="0" max="60" value="16"><output id="swingv">16</output></label>
+    <label>SPACE <input id="wet" type="range" min="0" max="100" value="28"><output id="wetv">28</output></label>
     <label>VOL <input id="vol" type="range" min="0" max="100" value="80"><output id="volv">80</output></label>
+    <label>KEY <select id="key"></select></label>
+    <label>SCALE <select id="scale"></select></label>
   </div>
 </header>
 
@@ -65,14 +77,17 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   <div class="legend">DRUMS &mdash; click a cell: off / on / accent</div>
 </section>
 
-<section id="bassSec">
-  <div class="legend">BASS &mdash; one note per column</div>
+<section id="melodic">
+  <div class="legend">INSTRUMENTS &mdash; pick a track, place notes; a column can hold a chord</div>
+  <div class="tabs" id="tabs"></div>
+  <div class="tctl" id="tctl"></div>
 </section>
 
 <footer>
   <button data-preset="house">HOUSE</button>
   <button data-preset="boombap">BOOM BAP</button>
-  <button data-preset="breaks">BREAKS</button>
+  <button data-preset="cinematic">CINEMATIC</button>
+  <button data-preset="chiptune">CHIPTUNE</button>
   <button id="rand">RANDOM</button>
   <button id="clear">CLEAR</button>
   <button id="share">COPY LINK</button>
@@ -80,82 +95,165 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 </footer>
 
 <script>
-const STEPS = 16;
+const STEPS = 16, ROWS = 12;
 const DRUMS = [
-  {id:'kick', nm:'KICK',  c:'#ff3d81'},
-  {id:'snare',nm:'SNARE', c:'#ffb703'},
-  {id:'clap', nm:'CLAP',  c:'#8ecae6'},
-  {id:'hat',  nm:'HAT',   c:'#a3f7bf'},
-  {id:'ohat', nm:'O-HAT', c:'#39d9ff'},
-  {id:'tom',  nm:'TOM',   c:'#c77dff'},
-  {id:'rim',  nm:'RIM',   c:'#f77f00'},
-  {id:'ride', nm:'RIDE',  c:'#ffd166'},
+  {id:'kick', nm:'KICK',   c:'#ff3d81'},
+  {id:'snare',nm:'SNARE',  c:'#ffb703'},
+  {id:'clap', nm:'CLAP',   c:'#8ecae6'},
+  {id:'hat',  nm:'HAT',    c:'#a3f7bf'},
+  {id:'ohat', nm:'O-HAT',  c:'#39d9ff'},
+  {id:'tom',  nm:'TOM',    c:'#c77dff'},
+  {id:'rim',  nm:'RIM',    c:'#f77f00'},
+  {id:'ride', nm:'RIDE',   c:'#ffd166'},
   {id:'cow',  nm:'COWBELL',c:'#06d6a0'},
-  {id:'conga',nm:'CONGA', c:'#ef8354'},
-  {id:'shkr', nm:'SHAKER',c:'#b8c0ff'},
-  {id:'stab', nm:'STAB',  c:'#e0aaff'}
+  {id:'conga',nm:'CONGA',  c:'#ef8354'},
+  {id:'shkr', nm:'SHAKER', c:'#b8c0ff'},
+  {id:'stab', nm:'STAB',   c:'#e0aaff'}
 ];
-// C minor pentatonic, highest row first
-const NOTES = [{n:'C3',m:48},{n:'A#2',m:46},{n:'G2',m:43},{n:'F2',m:41},
-               {n:'D#2',m:39},{n:'C2',m:36},{n:'A#1',m:34},{n:'G1',m:31}];
+const KEYS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const SCALES = [
+  {nm:'MIN PENT', s:[0,3,5,7,10]},
+  {nm:'MAJ PENT', s:[0,2,4,7,9]},
+  {nm:'MINOR',    s:[0,2,3,5,7,8,10]},
+  {nm:'MAJOR',    s:[0,2,4,5,7,9,11]},
+  {nm:'DORIAN',   s:[0,2,3,5,7,9,10]},
+  {nm:'HARM MIN', s:[0,2,3,5,7,8,11]},
+  {nm:'BLUES',    s:[0,3,5,6,7,10]},
+  {nm:'CHROMATIC',s:[0,1,2,3,4,5,6,7,8,9,10,11]}
+];
+const TRACK_COLORS = ['#39d9ff','#ffd166','#e0aaff','#06d6a0','#ff8fab','#a3f7bf','#ffb703','#8ecae6'];
 const midiToFreq = m => 440 * Math.pow(2,(m-69)/12);
+const noteName = m => KEYS[((m%12)+12)%12] + (Math.floor(m/12)-1);
 
+/* ---------- state ---------- */
+const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8,steps:new Array(STEPS).fill(0)});
 const blank = () => ({
-  bpm:112, swing:16, vol:80,
+  bpm:112, swing:16, vol:80, wet:28, key:0, scale:0,
   drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(STEPS).fill(0)])),
-  bass:new Array(STEPS).fill(-1),
   mute:Object.fromEntries(DRUMS.map(d=>[d.id,0])),
   gain:Object.fromEntries(DRUMS.map(d=>[d.id,0.8])),
-  bassMute:0, bassGain:0.8
+  tracks:[blankTrack('bass',-1,1.5), blankTrack('piano',0,1), blankTrack('strings',1,4)]
 });
-let state = blank();
+let state = blank(), cur = 0;
 
-/* ---------- pattern encode/decode (URL + localStorage) ---------- */
+// row 0 is the TOP of the grid; idx counts scale degrees up from the track root
+function rowMidi(tr,row){
+  const sc = SCALES[state.scale].s, idx = ROWS-1-row;
+  return 36 + state.key + 12*(tr.oct + Math.floor(idx/sc.length)) + sc[idx%sc.length];
+}
+function nearestRow(tr,midi){
+  let best=0, bd=1e9;
+  for(let r=0;r<ROWS;r++){ const d=Math.abs(rowMidi(tr,r)-midi); if(d<bd){ bd=d; best=r; } }
+  return best;
+}
+
+/* ---------- pattern string (URL hash + localStorage) ---------- */
+const hex3 = n => ('00'+(n&0xfff).toString(16)).slice(-3);
+const clamp = (v,lo,hi,dflt) => isNaN(v) ? dflt : Math.min(hi,Math.max(lo,v));
 function encode(s){
   const d = DRUMS.map(x=>s.drums[x.id].join('')).join(',');
-  const b = s.bass.map(v=>v<0?'.':v).join('');
-  return ['v1',s.bpm,s.swing,d,b].join('|');
+  const t = s.tracks.map(tr=>[tr.inst,tr.oct,Math.round(tr.len*4),tr.mute,
+    Math.round(tr.vol*99),tr.steps.map(hex3).join('')].join(':')).join(';');
+  return ['v2',s.bpm,s.swing,s.key,s.scale,s.wet,d,t].join('|');
 }
 function decode(str){
   const p = String(str).split('|');
-  if(p[0]!=='v1' || p.length<5) return null;
+  if(p[0]==='v1') return upgradeV1(p);
+  if(p[0]!=='v2' || p.length<8) return null;
   const s = blank();
-  s.bpm = Math.min(180,Math.max(60,+p[1]||112));
-  s.swing = Math.min(60,Math.max(0,+p[2]||0));
-  p[3].split(',').forEach((lane,i)=>{
+  s.bpm   = clamp(+p[1],60,180,112);
+  s.swing = clamp(+p[2],0,60,0);
+  s.key   = clamp(+p[3],0,11,0);
+  s.scale = clamp(+p[4],0,SCALES.length-1,0);
+  s.wet   = clamp(+p[5],0,100,28);
+  readDrums(s,p[6]);
+  s.tracks = p[7].split(';').filter(Boolean).map(chunk=>{
+    const f = chunk.split(':');
+    const tr = blankTrack(INST[f[0]] ? f[0] : 'piano', clamp(+f[1],-3,3,0), clamp(+f[2],1,32,4)/4);
+    tr.mute = +f[3] ? 1 : 0;
+    tr.vol  = clamp(+f[4],0,99,79)/99;
+    tr.steps = Array.from({length:STEPS},(_,i)=>(parseInt((f[5]||'').substr(i*3,3),16)|0) & 0xfff);
+    return tr;
+  });
+  if(!s.tracks.length) s.tracks = blank().tracks;
+  return s;
+}
+function readDrums(s,str){
+  String(str).split(',').forEach((lane,i)=>{
     if(!DRUMS[i]) return;
     s.drums[DRUMS[i].id] = Array.from({length:STEPS},(_,j)=>{
       const v = +lane[j]; return v===1||v===2 ? v : 0;
     });
   });
-  s.bass = Array.from({length:STEPS},(_,j)=>{
-    const ch = p[4][j];
-    return (ch>='0' && ch<='7') ? +ch : -1;
-  });
+}
+// v1 links: drum lanes + one 8-row pentatonic bass roll -> track 1
+function upgradeV1(p){
+  if(p.length<5) return null;
+  const s = blank();
+  s.bpm = clamp(+p[1],60,180,112);
+  s.swing = clamp(+p[2],0,60,0);
+  readDrums(s,p[3]);
+  const V1_BASS = [48,46,43,41,39,36,34,31];
+  const tr = s.tracks[0];
+  for(let i=0;i<STEPS;i++){
+    const ch = p[4][i];
+    tr.steps[i] = (ch>='0' && ch<='7') ? (1 << nearestRow(tr,V1_BASS[+ch])) : 0;
+  }
   return s;
 }
 
-/* ---------- audio ---------- */
-let ac, master, laneGain={}, bassGainNode, noiseBuf;
+/* ---------- audio graph ---------- */
+let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], noiseBuf, ksCache={};
 function ensureAudio(){
   if(ac) return;
   ac = new (window.AudioContext||window.webkitAudioContext)();
-  master = ac.createGain();
   const comp = ac.createDynamicsCompressor();
-  comp.threshold.value=-12; comp.ratio.value=4;
-  master.connect(comp).connect(ac.destination);
-  master.gain.value = state.vol/100;
-  DRUMS.forEach(d=>{ const g=ac.createGain(); g.gain.value=state.gain[d.id]; g.connect(master); laneGain[d.id]=g; });
-  bassGainNode = ac.createGain(); bassGainNode.gain.value=state.bassGain; bassGainNode.connect(master);
+  comp.threshold.value=-14; comp.ratio.value=4; comp.connect(ac.destination);
+  // fixed headroom trim: the mix peaks well over 1.0 with pads + drums stacked
+  const head = ac.createGain(); head.gain.value = 0.45; head.connect(comp);
+  master = ac.createGain(); master.gain.value = state.vol/100; master.connect(head);
+
+  const verb = ac.createConvolver(); verb.buffer = makeIR(2.4,2.6);
+  wetGain = ac.createGain(); wetGain.gain.value = state.wet/100;
+  verb.connect(wetGain).connect(master);
+  sendMel  = ac.createGain(); sendMel.gain.value = 1;    sendMel.connect(verb);
+  sendDrum = ac.createGain(); sendDrum.gain.value = 0.3; sendDrum.connect(verb);
+
+  DRUMS.forEach(d=>{
+    const g=ac.createGain(); g.gain.value=state.gain[d.id];
+    g.connect(master); g.connect(sendDrum); laneGain[d.id]=g;
+  });
+
   noiseBuf = ac.createBuffer(1, ac.sampleRate*2, ac.sampleRate);
   const ch = noiseBuf.getChannelData(0);
   for(let i=0;i<ch.length;i++) ch[i] = Math.random()*2-1;
+  syncTrackGains();
 }
+function syncTrackGains(){
+  if(!ac) return;
+  state.tracks.forEach((tr,i)=>{
+    if(!trackGain[i]){
+      const g=ac.createGain(); g.connect(master); g.connect(sendMel); trackGain[i]=g;
+    }
+    trackGain[i].gain.value = tr.mute ? 0 : tr.vol;
+  });
+  trackGain.length = state.tracks.length;
+}
+function makeIR(sec,decay){
+  const len = Math.floor(ac.sampleRate*sec), b = ac.createBuffer(2,len,ac.sampleRate);
+  for(let c=0;c<2;c++){
+    const d = b.getChannelData(c);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decay);
+  }
+  return b;
+}
+
+/* ---------- shared voice helpers ---------- */
 function noise(bus,t,dur,vel,type,freq,q,atk){
   const s=ac.createBufferSource(); s.buffer=noiseBuf;
   const f=ac.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q) f.Q.value=q;
   const g=ac.createGain();
-  if(atk){ g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(vel,t+atk); }
+  if(atk){ g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(Math.max(0.0001,vel),t+atk); }
   else g.gain.setValueAtTime(Math.max(0.0001,vel),t);
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   s.connect(f).connect(g).connect(bus); s.start(t); s.stop(t+dur+0.02);
@@ -169,7 +267,173 @@ function tone(bus,t,f0,f1,dur,vel,type){
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   o.connect(g).connect(bus); o.start(t); o.stop(t+dur+0.02);
 }
-// 808-style cymbal: six inharmonic squares through band+highpass
+// attack / hold / release shared by every sustaining instrument
+function adsr(g,t,dur,vel,atk,rel){
+  const hold = Math.max(t+atk+0.005, t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(Math.max(0.0001,vel),t+atk);
+  g.gain.setValueAtTime(Math.max(0.0001,vel),hold);
+  g.gain.exponentialRampToValueAtTime(0.0001,hold+rel);
+  return hold+rel;
+}
+function vibrato(t,end,rate,depth,delay){
+  const lfo=ac.createOscillator(); lfo.frequency.value=rate;
+  const g=ac.createGain();
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(depth,t+delay);
+  lfo.connect(g); lfo.start(t); lfo.stop(end);
+  return g; // -> osc.detune
+}
+// Karplus-Strong: one 220Hz string per damping value, pitched by playbackRate
+function ksBuf(damp){
+  const key='k'+damp;
+  if(ksCache[key]) return ksCache[key];
+  const sr=ac.sampleRate, n=Math.round(sr/220), len=Math.floor(sr*3);
+  const buf=ac.createBuffer(1,len,sr), d=buf.getChannelData(0), ring=new Float32Array(n);
+  for(let i=0;i<n;i++) ring[i]=Math.random()*2-1;
+  let idx=0;
+  for(let i=0;i<len;i++){
+    const cur=ring[idx], nxt=ring[(idx+1)%n];
+    d[i]=cur; ring[idx]=(cur+nxt)*0.5*damp; idx=(idx+1)%n;
+  }
+  return ksCache[key]=buf;
+}
+let curveCache={};
+function driveCurve(k){
+  if(curveCache[k]) return curveCache[k];
+  const n=1024, c=new Float32Array(n);
+  for(let i=0;i<n;i++){ const x=i*2/n-1; c[i]=(1+k)*x/(1+k*Math.abs(x)); }
+  return curveCache[k]=c;
+}
+function pluck(bus,t,f,dur,vel,o){
+  o=o||{};
+  const s=ac.createBufferSource(); s.buffer=ksBuf(o.damp||0.996);
+  s.playbackRate.value = f/220;
+  const lp=ac.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.value=Math.min(14000,f*(o.bright||14)); lp.Q.value=0.7;
+  const g=ac.createGain();
+  const end = Math.min(t + dur + (o.rel||0.35), t + 3/(f/220));
+  g.gain.setValueAtTime(Math.max(0.0001,vel),t);
+  g.gain.setValueAtTime(Math.max(0.0001,vel),Math.max(t+0.01,Math.min(t+dur,end-0.02)));
+  g.gain.exponentialRampToValueAtTime(0.0001,end);
+  let out = lp;
+  if(o.drive){
+    const ws=ac.createWaveShaper(); ws.curve=driveCurve(o.drive); ws.oversample='2x';
+    lp.connect(ws); out = ws;
+  }
+  s.connect(lp); out.connect(g).connect(bus);
+  s.start(t); s.stop(end+0.02);
+}
+function stack(bus,t,f,dur,vel,o){
+  // detuned oscillators -> lowpass -> ADSR: strings, brass, pads, leads
+  o=o||{};
+  const filt=ac.createBiquadFilter(); filt.type='lowpass'; filt.Q.value=o.q||1;
+  const cut=Math.min(13000,f*(o.bright||6));
+  const g=ac.createGain();
+  const end=adsr(g,t,dur,vel,o.atk||0.1,o.rel||0.3);
+  if(o.sweep){
+    filt.frequency.setValueAtTime(Math.min(cut,f*1.5),t);
+    filt.frequency.linearRampToValueAtTime(cut,t+(o.atk||0.08)+0.05);
+    filt.frequency.exponentialRampToValueAtTime(Math.max(180,f*2),end);
+  } else filt.frequency.value=cut;
+  const vib = o.vib ? vibrato(t,end+0.1,o.vibRate||5.2,o.vib,o.vibDelay||0.25) : null;
+  (o.det||[0]).forEach(c=>{
+    const osc=ac.createOscillator(); osc.type=o.type||'sawtooth';
+    osc.frequency.value=f; osc.detune.value=c;
+    if(vib) vib.connect(osc.detune);
+    osc.connect(filt); osc.start(t); osc.stop(end+0.05);
+  });
+  if(o.breath) noise(filt,t,dur+0.15,vel*o.breath,'bandpass',Math.min(9000,f*3),0.8,0.06);
+  filt.connect(g).connect(bus);
+}
+function additive(bus,t,f,dur,vel,parts,o){
+  o=o||{};
+  const g=ac.createGain();
+  const end=adsr(g,t,dur,vel,o.atk||0.02,o.rel||0.2);
+  parts.forEach(pr=>{
+    if(f*pr[0] > 16000) return;
+    const osc=ac.createOscillator(); osc.type=o.type||'sine';
+    osc.frequency.value=f*pr[0];
+    osc.detune.value=o.spread?(Math.random()*o.spread-o.spread/2):0;
+    const pg=ac.createGain(); pg.gain.value=pr[1];
+    osc.connect(pg).connect(g); osc.start(t); osc.stop(end+0.05);
+  });
+  g.connect(bus);
+}
+function decayStack(bus,t,f,dur,vel,parts,o){
+  // struck sounds: every partial gets its own decay (piano, marimba)
+  o=o||{};
+  parts.forEach(pr=>{
+    if(f*pr[0] > 16000) return;
+    const osc=ac.createOscillator(); osc.type=pr[3]||o.type||'sine';
+    osc.frequency.value=f*pr[0];
+    osc.detune.value=pr[0]>1?(pr[0]-1)*(o.inh||2):0;
+    const g=ac.createGain(), len=Math.max(0.08,dur*pr[2]);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(Math.max(0.0001,vel*pr[1]),t+(o.atk||0.004));
+    g.gain.exponentialRampToValueAtTime(0.0001,t+len);
+    osc.connect(g).connect(bus); osc.start(t); osc.stop(t+len+0.05);
+  });
+}
+function fm(bus,t,f,dur,vel,o){
+  o=o||{};
+  const car=ac.createOscillator(); car.frequency.value=f;
+  const mod=ac.createOscillator(); mod.frequency.value=f*(o.ratio||2);
+  const mg=ac.createGain();
+  mg.gain.setValueAtTime(f*(o.index||3),t);
+  mg.gain.exponentialRampToValueAtTime(1,t+dur*(o.mdk||0.6)+0.05);
+  mod.connect(mg).connect(car.frequency);
+  const g=ac.createGain();
+  const end = t + dur*(o.dk||1) + 0.25;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(Math.max(0.0001,vel),t+0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001,end-0.02);
+  car.connect(g).connect(bus);
+  mod.start(t); car.start(t); mod.stop(end); car.stop(end);
+}
+
+/* ---------- the instruments ---------- */
+const INST = {
+  bass:    {nm:'BASS SYNTH', play:(b,t,f,d,v)=>{
+             stack(b,t,f,d,v*0.9,{det:[0],bright:9,q:7,sweep:1,atk:0.008,rel:0.12});
+             stack(b,t,f/2,d,v*0.5,{type:'square',bright:5,atk:0.008,rel:0.12}); }},
+  subbass: {nm:'SUB BASS',   play:(b,t,f,d,v)=>additive(b,t,f/2,d,v*1.1,[[1,1],[2,0.12]],{atk:0.01,rel:0.12})},
+  bassguit:{nm:'BASS GUITAR',play:(b,t,f,d,v)=>pluck(b,t,f,d,v*1.1,{damp:0.9975,bright:6,rel:0.25})},
+  guitar:  {nm:'GUITAR',     play:(b,t,f,d,v)=>pluck(b,t,f,d,v,{damp:0.996,bright:16,rel:0.4})},
+  eguitar: {nm:'E-GUITAR',   play:(b,t,f,d,v)=>pluck(b,t,f,d,v*0.7,{damp:0.9985,bright:9,drive:14,rel:0.5})},
+  harp:    {nm:'HARP',       play:(b,t,f,d,v)=>pluck(b,t,f,d,v*0.9,{damp:0.9988,bright:22,rel:1.1})},
+  piano:   {nm:'PIANO',      play:(b,t,f,d,v)=>{
+             decayStack(b,t,f,d*1.6,v,[[1,1,1,'triangle'],[2,0.4,0.7],[3,0.16,0.5],[4,0.1,0.35],[6,0.05,0.25]],{inh:2.5});
+             noise(b,t,0.02,v*0.14,'bandpass',Math.min(9000,f*5),1); }},
+  rhodes:  {nm:'RHODES',     play:(b,t,f,d,v)=>fm(b,t,f,d*1.4,v*0.9,{ratio:2,index:2.4,mdk:0.4,dk:1.1})},
+  organ:   {nm:'CHURCH ORGAN',play:(b,t,f,d,v)=>additive(b,t,f,d,v*0.7,
+             [[0.5,0.55],[1,1],[1.5,0.3],[2,0.6],[3,0.22],[4,0.3],[6,0.1],[8,0.14]],{atk:0.04,rel:0.3,spread:5})},
+  reedorg: {nm:'REED ORGAN', play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[-4,4],type:'square',bright:5,atk:0.05,rel:0.2,vib:4,vibRate:6})},
+  strings: {nm:'STRINGS',    play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.55,{det:[-8,0,8],bright:5,atk:0.22,rel:0.7,vib:5,vibDelay:0.35,breath:0.02})},
+  violin:  {nm:'VIOLIN',     play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.6,{det:[-3,3],bright:8,q:2,atk:0.09,rel:0.28,vib:9,vibRate:5.8,vibDelay:0.2,breath:0.04})},
+  cello:   {nm:'CELLO',      play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.7,{det:[-4,4],bright:4.5,q:2,atk:0.12,rel:0.35,vib:6,vibRate:4.8,vibDelay:0.3,breath:0.05})},
+  trumpet: {nm:'TRUMPET',    play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.6,{det:[0],bright:11,q:3,sweep:1,atk:0.05,rel:0.18,vib:5,vibRate:6,vibDelay:0.25})},
+  horn:    {nm:'FRENCH HORN',play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.6,{det:[-5,5],bright:5,q:2,sweep:1,atk:0.13,rel:0.3,vib:4,vibDelay:0.35})},
+  brasses: {nm:'BRASS SECT', play:(b,t,f,d,v)=>{
+             stack(b,t,f,d,v*0.45,{det:[-7,0,7],bright:9,q:2,sweep:1,atk:0.06,rel:0.22,vib:4});
+             stack(b,t,f*2,d,v*0.18,{det:[0],bright:7,q:2,sweep:1,atk:0.07,rel:0.2}); }},
+  flute:   {nm:'FLUTE',      play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[0],type:'sine',bright:4,atk:0.07,rel:0.2,vib:7,vibRate:5,vibDelay:0.25,breath:0.28})},
+  choir:   {nm:'CHOIR',      play:(b,t,f,d,v)=>{
+             [[700,1],[1150,0.5],[2600,0.22]].forEach(fo=>{
+               const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=fo[0]; bp.Q.value=6;
+               const fg=ac.createGain(); fg.gain.value=fo[1]; bp.connect(fg).connect(b);
+               stack(bp,t,f,d,v*0.5,{det:[-9,0,9],bright:9,atk:0.25,rel:0.8,vib:5,vibDelay:0.4});
+             }); }},
+  bell:    {nm:'BELL',       play:(b,t,f,d,v)=>fm(b,t,f,Math.max(d,0.9),v*0.55,{ratio:1.41,index:5,mdk:0.25,dk:1.4})},
+  marimba: {nm:'MARIMBA',    play:(b,t,f,d,v)=>decayStack(b,t,f,Math.min(d,0.6),v*0.9,[[1,1,1],[4,0.25,0.4],[9.2,0.08,0.2]])},
+  lead:    {nm:'SYNTH LEAD', play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.5,{det:[-6,6],type:'square',bright:8,q:5,sweep:1,atk:0.01,rel:0.15,vib:6,vibDelay:0.3})},
+  pad:     {nm:'WARM PAD',   play:(b,t,f,d,v)=>stack(b,t,f,d,v*0.4,{det:[-12,-4,4,12],bright:3.5,atk:0.5,rel:1.2,vib:3,vibDelay:0.6})},
+  psyn:    {nm:'SYNTH PLUCK',play:(b,t,f,d,v)=>stack(b,t,f,Math.min(d,0.3),v*0.6,{det:[-4,4],bright:12,q:6,sweep:1,atk:0.004,rel:0.12})},
+  chip:    {nm:'CHIPTUNE',   play:(b,t,f,d,v)=>additive(b,t,f,d,v*0.35,[[1,1],[2,0.3],[3,0.15]],{type:'square',atk:0.002,rel:0.05})}
+};
+const INST_KEYS = Object.keys(INST);
+
+/* ---------- drum voices ---------- */
 function metal(bus,t,dur,vel,base,hp){
   const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=base*10; bp.Q.value=0.6;
   const h=ac.createBiquadFilter(); h.type='highpass'; h.frequency.value=hp;
@@ -181,22 +445,6 @@ function metal(bus,t,dur,vel,base,hp){
     o.connect(bp); o.start(t); o.stop(t+dur+0.02);
   });
   bp.connect(h).connect(g).connect(bus);
-}
-// plucked Cm triad, fixed to the key the bass rows are locked to
-function stab(bus,t,dur,vel){
-  const f=ac.createBiquadFilter(); f.type='lowpass'; f.Q.value=3;
-  f.frequency.setValueAtTime(4200,t);
-  f.frequency.exponentialRampToValueAtTime(700,t+dur);
-  const g=ac.createGain();
-  g.gain.setValueAtTime(0.0001,t);
-  g.gain.linearRampToValueAtTime(vel,t+0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  [60,63,67].forEach(m=>{
-    const o=ac.createOscillator(); o.type='sawtooth';
-    o.frequency.value=midiToFreq(m); o.detune.value=Math.random()*10-5;
-    o.connect(f); o.start(t); o.stop(t+dur+0.03);
-  });
-  f.connect(g).connect(bus);
 }
 function hit(id,t,vel){
   const bus = laneGain[id];
@@ -213,25 +461,12 @@ function hit(id,t,vel){
     case 'cow':   tone(bus,t,540,540,0.14,vel*0.22,'square'); tone(bus,t,800,800,0.11,vel*0.18,'square'); break;
     case 'conga': tone(bus,t,400,300,0.22,vel*0.7); noise(bus,t,0.015,vel*0.2,'highpass',2000); break;
     case 'shkr':  noise(bus,t,0.13,vel*0.3,'bandpass',7000,1.2,0.02); break;
-    case 'stab':  stab(bus,t,0.22,vel*0.28); break;
+    case 'stab':  [60,63,67].forEach((m,i)=>stack(bus,t,midiToFreq(m),0.2,vel*(i?0.25:0.3),
+                    {det:i?[0]:[-5,5],bright:12,q:3,sweep:1,atk:0.006,rel:0.15})); break;
   }
 }
-function bassNote(t,row,dur,vel){
-  const freq = midiToFreq(NOTES[row].m);
-  const o=ac.createOscillator(); o.type='sawtooth'; o.frequency.value=freq;
-  const o2=ac.createOscillator(); o2.type='square'; o2.frequency.value=freq/2;
-  const f=ac.createBiquadFilter(); f.type='lowpass'; f.Q.value=7;
-  f.frequency.setValueAtTime(Math.min(9000,freq*9),t);
-  f.frequency.exponentialRampToValueAtTime(Math.max(80,freq*1.6),t+dur*0.9);
-  const g=ac.createGain();
-  g.gain.setValueAtTime(0.0001,t);
-  g.gain.linearRampToValueAtTime(vel,t+0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  o.connect(f); o2.connect(f); f.connect(g).connect(bassGainNode);
-  o.start(t); o2.start(t); o.stop(t+dur+0.05); o2.stop(t+dur+0.05);
-}
 
-/* ---------- clock (lookahead scheduler) ---------- */
+/* ---------- clock (lookahead scheduler on the audio clock) ---------- */
 let playing=false, step=0, nextTime=0, timer=null, shown=-1;
 const queue=[];
 const stepDur = () => 60/state.bpm/4;
@@ -246,9 +481,14 @@ function scheduler(){
       const v = state.drums[d.id][step];
       if(v && !state.mute[d.id]) hit(d.id,t,v===2?1:0.6);
     });
-    const row = state.bass[step];
-    if(row>=0 && !state.bassMute) bassNote(t,row,stepDur()*1.7,0.5);
-    queue.push({step,t});
+    state.tracks.forEach((tr,ti)=>{
+      const mask = tr.steps[step];
+      if(tr.mute || !mask || !trackGain[ti]) return;
+      const inst = INST[tr.inst] || INST.piano;
+      for(let r=0;r<ROWS;r++)
+        if(mask & (1<<r)) inst.play(trackGain[ti],t,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75);
+    });
+    queue.push({step:step,t:t});
     nextTime += stepDur();
     step = (step+1)%STEPS;
   }
@@ -286,11 +526,10 @@ function ruler(){
   }
   return d;
 }
-function build(){
-  const dSec=document.getElementById('drums'), bSec=document.getElementById('bassSec');
-  dSec.querySelectorAll('.row,.steps').forEach(e=>e.remove());
-  bSec.querySelectorAll('.row,.steps').forEach(e=>e.remove());
-  dSec.appendChild(ruler());
+function buildDrums(){
+  const sec=document.getElementById('drums');
+  sec.querySelectorAll('.row,.steps').forEach(e=>e.remove());
+  sec.appendChild(ruler());
   DRUMS.forEach(d=>{
     const row=document.createElement('div'); row.className='row';
     row.innerHTML='<div class="lane"><span class="nm">'+d.nm+'</span>'+
@@ -302,42 +541,62 @@ function build(){
       c.dataset.step=i; c.dataset.lane=d.id;
       row.appendChild(c);
     }
-    dSec.appendChild(row);
+    sec.appendChild(row);
   });
-  bSec.appendChild(ruler());
-  NOTES.forEach((n,r)=>{
+}
+function buildMelodic(){
+  const sec=document.getElementById('melodic'), tabs=document.getElementById('tabs'), ctl=document.getElementById('tctl');
+  if(cur>=state.tracks.length) cur=state.tracks.length-1;
+  const tr=state.tracks[cur], col=TRACK_COLORS[cur%TRACK_COLORS.length];
+
+  tabs.innerHTML = state.tracks.map((t,i)=>
+    '<button class="tab'+(i===cur?' on':'')+(t.mute?' muted':'')+'" data-tab="'+i+'" style="--c:'+
+    TRACK_COLORS[i%TRACK_COLORS.length]+'">'+(i+1)+' '+(INST[t.inst]||INST.piano).nm+'</button>').join('')
+    + '<button class="tab" data-addtrack="1">+ TRACK</button>';
+
+  ctl.innerHTML =
+    '<label>INSTRUMENT <select id="instSel">'+INST_KEYS.map(k=>
+      '<option value="'+k+'"'+(k===tr.inst?' selected':'')+'>'+INST[k].nm+'</option>').join('')+'</select></label>'+
+    '<label>OCT <button data-oct="-1">&minus;</button><output>'+(tr.oct>0?'+':'')+tr.oct+'</output><button data-oct="1">+</button></label>'+
+    '<label>LENGTH <input type="range" id="lenSel" min="1" max="32" value="'+Math.round(tr.len*4)+'"><output id="lenv">'+tr.len+'&times;</output></label>'+
+    '<label>LEVEL <input type="range" id="tvol" min="0" max="100" value="'+Math.round(tr.vol*100)+'"></label>'+
+    '<button class="mute'+(tr.mute?' on':'')+'" id="tmute">MUTE</button>'+
+    (state.tracks.length>1 ? '<button id="tdel">DELETE</button>' : '');
+
+  sec.querySelectorAll('.row,.steps').forEach(e=>e.remove());
+  sec.appendChild(ruler());
+  for(let r=0;r<ROWS;r++){
+    const midi=rowMidi(tr,r);
     const row=document.createElement('div'); row.className='row';
-    row.innerHTML = r===0
-      ? '<div class="lane"><span class="nm">'+n.n+'</span><button class="mute" data-mute="bass">M</button>'+
-        '<input type="range" min="0" max="100" data-gain="bass" value="'+(state.bassGain*100)+'"></div>'
-      : '<div class="lane"><span class="nm">'+n.n+'</span></div>';
+    row.innerHTML='<div class="lane"><span class="nm">'+noteName(midi)+'</span></div>';
     for(let i=0;i<STEPS;i++){
       const c=document.createElement('div');
-      c.className='cell'; c.style.setProperty('--c','#39d9ff');
-      c.dataset.step=i; c.dataset.row=r;
+      c.className='cell'+((((midi-state.key)%12)+12)%12===0?' root':'');
+      c.style.setProperty('--c',col);
+      c.dataset.step=i; c.dataset.mrow=r;
       row.appendChild(c);
     }
-    bSec.appendChild(row);
-  });
-  paint();
+    sec.appendChild(row);
+  }
 }
+function build(){ buildDrums(); buildMelodic(); syncTrackGains(); paint(); }
 function paint(){
   document.querySelectorAll('[data-lane]').forEach(c=>{
     const v = state.drums[c.dataset.lane][+c.dataset.step];
     c.classList.toggle('on',v===1); c.classList.toggle('acc',v===2);
   });
-  document.querySelectorAll('[data-row]').forEach(c=>{
-    c.classList.toggle('on', state.bass[+c.dataset.step] === +c.dataset.row);
+  const tr=state.tracks[cur];
+  document.querySelectorAll('[data-mrow]').forEach(c=>{
+    c.classList.toggle('on', !!(tr.steps[+c.dataset.step] & (1<<+c.dataset.mrow)));
   });
   document.querySelectorAll('[data-mute]').forEach(b=>{
-    const on = b.dataset.mute==='bass' ? state.bassMute : state.mute[b.dataset.mute];
-    b.classList.toggle('on',!!on);
+    b.classList.toggle('on',!!state.mute[b.dataset.mute]);
   });
   save();
 }
-function save(){
-  try{ localStorage.setItem('gridgroove', encode(state)); }catch(e){}
-}
+function save(){ try{ localStorage.setItem('gridgroove', encode(state)); }catch(e){} }
+const $=id=>document.getElementById(id);
+function msg(t){ $('msg').textContent=t; setTimeout(()=>{ $('msg').textContent=''; },1800); }
 
 document.body.addEventListener('click',e=>{
   const cell=e.target.closest('.cell');
@@ -348,63 +607,94 @@ document.body.addEventListener('click',e=>{
       state.drums[lane][i]=(state.drums[lane][i]+1)%3;
       if(state.drums[lane][i]) hit(lane,ac.currentTime,state.drums[lane][i]===2?1:0.6);
     }else{
-      const i=+cell.dataset.step, r=+cell.dataset.row;
-      state.bass[i] = state.bass[i]===r ? -1 : r;
-      if(state.bass[i]===r) bassNote(ac.currentTime,r,0.3,0.5);
+      const tr=state.tracks[cur], i=+cell.dataset.step, r=+cell.dataset.mrow;
+      tr.steps[i] ^= (1<<r);
+      if(tr.steps[i] & (1<<r))
+        (INST[tr.inst]||INST.piano).play(trackGain[cur],ac.currentTime,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75);
     }
     cell.classList.add('hit'); setTimeout(()=>cell.classList.remove('hit'),60);
     paint(); return;
   }
   const m=e.target.closest('[data-mute]');
-  if(m){
-    if(m.dataset.mute==='bass') state.bassMute^=1; else state.mute[m.dataset.mute]^=1;
-    paint(); return;
+  if(m){ state.mute[m.dataset.mute]^=1; paint(); return; }
+  const tab=e.target.closest('[data-tab]');
+  if(tab){ cur=+tab.dataset.tab; buildMelodic(); paint(); return; }
+  if(e.target.closest('[data-addtrack]')){
+    if(state.tracks.length>=8){ msg('8 tracks max'); return; }
+    state.tracks.push(blankTrack('piano',0,1));
+    cur=state.tracks.length-1; ensureAudio(); build(); return;
+  }
+  const oct=e.target.closest('[data-oct]');
+  if(oct){
+    const tr=state.tracks[cur];
+    tr.oct=Math.min(3,Math.max(-3,tr.oct + (+oct.dataset.oct)));
+    buildMelodic(); paint(); return;
+  }
+  if(e.target.id==='tmute'){ state.tracks[cur].mute^=1; syncTrackGains(); buildMelodic(); paint(); return; }
+  if(e.target.id==='tdel'){
+    state.tracks.splice(cur,1);
+    trackGain.forEach(g=>g.disconnect()); trackGain=[];
+    cur=Math.max(0,cur-1); build(); return;
   }
   const p=e.target.closest('[data-preset]');
   if(p) load(PRESETS[p.dataset.preset]);
 });
 document.body.addEventListener('input',e=>{
   const g=e.target.dataset.gain;
-  if(g===undefined) return;
-  ensureAudio();
-  const v=e.target.value/100;
-  if(g==='bass'){ state.bassGain=v; bassGainNode.gain.value=v; }
-  else { state.gain[g]=v; laneGain[g].gain.value=v; }
-  save();
+  if(g!==undefined){ ensureAudio(); state.gain[g]=e.target.value/100; laneGain[g].gain.value=state.gain[g]; save(); return; }
+  if(e.target.id==='lenSel'){
+    state.tracks[cur].len=e.target.value/4;
+    $('lenv').innerHTML=state.tracks[cur].len+'&times;'; save(); return;
+  }
+  if(e.target.id==='tvol'){ state.tracks[cur].vol=e.target.value/100; syncTrackGains(); save(); }
+});
+document.body.addEventListener('change',e=>{
+  if(e.target.id==='instSel'){ state.tracks[cur].inst=e.target.value; buildMelodic(); paint(); }
 });
 
-const $=id=>document.getElementById(id);
 $('play').onclick = ()=> playing?stop():start();
 $('bpm').oninput = e=>{ state.bpm=+e.target.value; $('bpmv').textContent=state.bpm; save(); };
 $('swing').oninput = e=>{ state.swing=+e.target.value; $('swingv').textContent=state.swing; save(); };
 $('vol').oninput = e=>{ state.vol=+e.target.value; $('volv').textContent=state.vol; ensureAudio(); master.gain.value=state.vol/100; save(); };
-$('clear').onclick = ()=>{ const b=blank(); b.bpm=state.bpm; b.swing=state.swing; load(encode(b)); };
+$('wet').oninput = e=>{ state.wet=+e.target.value; $('wetv').textContent=state.wet; ensureAudio(); wetGain.gain.value=state.wet/100; save(); };
+$('key').onchange = e=>{ state.key=+e.target.value; buildMelodic(); paint(); };
+$('scale').onchange = e=>{ state.scale=+e.target.value; buildMelodic(); paint(); };
+$('clear').onclick = ()=>{
+  const b=blank();
+  b.bpm=state.bpm; b.swing=state.swing; b.key=state.key; b.scale=state.scale; b.wet=state.wet;
+  b.tracks=state.tracks.map(t=>Object.assign({},t,{steps:new Array(STEPS).fill(0)}));
+  load(encode(b));
+};
 $('rand').onclick = ()=> load(encode(randomize()));
 $('share').onclick = ()=>{
-  const hash = '#'+encode(state);
+  const hash='#'+encode(state);
   history.replaceState(null,'',hash);
-  const url = location.origin+location.pathname+hash;
+  const url=location.origin+location.pathname+hash;
   if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>msg('link copied'),()=>msg('url updated'));
   else msg('url updated');
 };
 addEventListener('keydown',e=>{
   if(e.code==='Space' && e.target===document.body){ e.preventDefault(); playing?stop():start(); }
 });
-function msg(t){ $('msg').textContent=t; setTimeout(()=>{ $('msg').textContent=''; },1800); }
 
 function load(str){
   const s=decode(str) || decode(PRESETS.house);
   const wasPlaying=playing;
-  s.vol=state.vol; s.mute=state.mute; s.gain=state.gain; s.bassMute=state.bassMute; s.bassGain=state.bassGain;
-  state=s;
-  $('bpm').value=state.bpm; $('bpmv').textContent=state.bpm;
+  s.vol=state.vol; s.mute=state.mute; s.gain=state.gain;
+  state=s; cur=0;
+  if(ac){ trackGain.forEach(g=>g.disconnect()); }
+  trackGain=[];
+  $('bpm').value=state.bpm;     $('bpmv').textContent=state.bpm;
   $('swing').value=state.swing; $('swingv').textContent=state.swing;
+  $('wet').value=state.wet;     $('wetv').textContent=state.wet;
+  $('key').value=state.key;     $('scale').value=state.scale;
+  if(ac) wetGain.gain.value=state.wet/100;
   build();
   if(wasPlaying){ stop(); start(); }
 }
 function randomize(){
-  const s=blank(); s.bpm=state.bpm; s.swing=state.swing;
-  // per-step odds, so random patterns still land on sensible beats
+  const s=blank();
+  s.bpm=state.bpm; s.swing=state.swing; s.key=state.key; s.scale=state.scale; s.wet=state.wet;
   const odds={
     kick :[0.9,0,0,0.15, 0.15,0,0.25,0, 0.8,0,0,0.2, 0.15,0.2,0,0.15],
     snare:[0,0,0,0, 0.9,0,0,0.1, 0,0,0.1,0, 0.9,0,0,0.15],
@@ -417,23 +707,81 @@ function randomize(){
     cow  :[0,0,0,0, 0,0,0.2,0, 0,0,0,0, 0,0,0.2,0],
     conga:new Array(16).fill(0.1),
     shkr :new Array(16).fill(0.3),
-    stab :[0.25,0,0,0.1, 0,0,0.15,0, 0.2,0,0,0.1, 0,0,0.15,0]
+    stab :new Array(16).fill(0.05)
   };
   DRUMS.forEach(d=>{
     const p=odds[d.id] || new Array(16).fill(0.1);
     s.drums[d.id]=p.map(x=>Math.random()<x ? (Math.random()<0.25?2:1) : 0);
   });
-  for(let i=0;i<STEPS;i++) if(Math.random()<0.35) s.bass[i]=Math.floor(Math.random()*NOTES.length);
+  // long notes get sparse chords, short ones get busy single notes
+  s.tracks = state.tracks.map((t,i)=>{
+    const tr=blankTrack(t.inst,t.oct,t.len); tr.vol=t.vol; tr.mute=t.mute;
+    const pad = t.len>2, density = pad ? 0.12 : (i===0 ? 0.4 : 0.25);
+    for(let st=0;st<STEPS;st++){
+      if(Math.random()>density) continue;
+      const notes = pad ? 3 : (Math.random()<0.3?2:1);
+      const base = (pad?4:0) + Math.floor(Math.random()*(pad?6:9));
+      let mask=0;
+      for(let n=0;n<notes;n++) mask |= 1 << Math.min(ROWS-1,Math.max(0,base+n*2));
+      tr.steps[st]=mask;
+    }
+    return tr;
+  });
   return s;
 }
+
+/* ---------- presets ---------- */
+// notes are scale degrees counted up from the track root, so a preset survives a key change
+function mk(bpm,swing,scale,drums,tracks){
+  const s=blank(); s.bpm=bpm; s.swing=swing; s.scale=scale;
+  Object.keys(drums).forEach(k=>{ s.drums[k]=drums[k].split('').map(c=>+c||0); });
+  s.tracks=tracks.map(t=>{
+    const tr=blankTrack(t.inst,t.oct||0,t.len||1);
+    if(t.vol) tr.vol=t.vol;
+    Object.keys(t.notes).forEach(st=>{
+      tr.steps[+st] = t.notes[st].reduce((m,idx)=>m|(1<<(ROWS-1-idx)),0);
+    });
+    return tr;
+  });
+  return encode(s);
+}
 const PRESETS={
-  house:   'v1|124|0|1000100010001000,0000100000001000,0000000000000000,0010001000100010,0000000000100000,0000000000000000,0000000000000000,0000000000000000,0000000000000000,0000000000000000,0000000100000001,0010000000100000|5..5..3..5..1..3',
-  boombap: 'v1|88|22|1000000000100000,0000100000001000,0000000000000000,1010101010101010,0000000000000000,0000000000000100,0000001000000000,0000000000000000,0000000000000000,0000000100000010,0000000000000000,1000000000000000|5.....5...3.....',
-  breaks:  'v1|150|8|1000001000100000,0000100000001000,0000000000000000,1010101010101010,0000000000001000,0000000000000010,0001000000000000,0000100000001000,0000000000100000,0000000000000000,0000101000001010,0000000000000000|5..5.3..5..1..3.'
+  house: mk(124,0,0,{
+    kick:'1000100010001000', snare:'0000100000001000', hat:'0010001000100010',
+    ohat:'0000000000100000', shkr:'0000000100000001'
+  },[
+    {inst:'bass',oct:-1,len:1.2,notes:{0:[0],3:[0],6:[2],8:[0],11:[3],14:[1]}},
+    {inst:'rhodes',oct:0,len:1.6,notes:{2:[0,1,3],6:[0,1,3],10:[1,3,4],14:[1,3,4]}},
+    {inst:'strings',oct:1,len:8,notes:{0:[0,1,3]}}
+  ]),
+  boombap: mk(88,22,2,{
+    kick:'1000000000100000', snare:'0000100000001000', hat:'1010101010101010',
+    tom:'0000000000000100', rim:'0000001000000000', conga:'0000000100000010'
+  },[
+    {inst:'bassguit',oct:-1,len:1.4,notes:{0:[0],6:[4],10:[0],13:[2]}},
+    {inst:'rhodes',oct:0,len:2,notes:{4:[2,4,6],12:[1,3,5]}},
+    {inst:'guitar',oct:1,len:1,notes:{7:[4],8:[5],15:[2]}}
+  ]),
+  cinematic: mk(76,0,5,{
+    kick:'1000000000001000', ride:'0000000010000000', conga:'0000000000000010'
+  },[
+    {inst:'cello',oct:-1,len:8,notes:{0:[0],8:[4]}},
+    {inst:'strings',oct:0,len:6,notes:{0:[0,2,4],8:[2,4,6]}},
+    {inst:'horn',oct:1,len:4,notes:{4:[4],12:[6]}},
+    {inst:'choir',oct:1,len:8,notes:{0:[7]}}
+  ]),
+  chiptune: mk(150,0,3,{
+    kick:'1000001000100000', snare:'0000100000001000', hat:'1010101010101010', cow:'0000000000100000'
+  },[
+    {inst:'chip',oct:0,len:0.75,notes:{0:[0],1:[2],2:[4],3:[2],4:[5],6:[4],8:[7],10:[4],12:[5],14:[2]}},
+    {inst:'subbass',oct:-1,len:1.5,notes:{0:[0],4:[0],8:[3],12:[2]}},
+    {inst:'lead',oct:1,len:1,notes:{5:[4],7:[5],13:[7]}}
+  ])
 };
 
 /* ---------- boot ---------- */
-// read the seed before build(), which paints+saves and would clobber the saved pattern
+$('key').innerHTML = KEYS.map((k,i)=>'<option value="'+i+'">'+k+'</option>').join('');
+$('scale').innerHTML = SCALES.map((s,i)=>'<option value="'+i+'">'+s.nm+'</option>').join('');
 load(location.hash.slice(1) || localStorage.getItem('gridgroove') || PRESETS.house);
 
 /* ponytail: one runnable check — open index.html?test=1 */
@@ -442,7 +790,13 @@ if(location.search.indexOf('test=1')>-1){
   eq(Math.round(midiToFreq(69)),440,'a440');
   Object.keys(PRESETS).forEach(k=>eq(encode(decode(PRESETS[k])),PRESETS[k],'roundtrip '+k));
   eq(decode('garbage'),null,'reject bad input');
-  eq(decode('v1|999|99|'+DRUMS.map(()=>'0'.repeat(16)).join(',')+'|'+'.'.repeat(16)).bpm,180,'bpm clamp');
+  const L=decode('v1|100|10|1000100010001000,0000100000001000|5..5..3..5..1..3');
+  eq(L.drums.kick.join(''),'1000100010001000','v1 drums survive');
+  eq(L.tracks[0].steps.filter(Boolean).length,6,'v1 bass notes survive');
+  const t=blankTrack('piano',0,1);
+  eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
+  eq(hex3(0xfff),'fff','mask packs');
+  eq(INST_KEYS.every(k=>typeof INST[k].play==='function'),true,'every instrument is playable');
   state.bpm=120; state.swing=50;
   eq(+stepTime(0,1).toFixed(4), +(stepDur()*0.5).toFixed(4),'swing offsets odd steps');
   eq(stepTime(0,2),0,'even steps stay on grid');
