@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Grid Groove</title>
+<meta name="description" content="A drum machine, instrument sequencer and song arranger in one HTML file. 76 synthesised instruments, no samples, no libraries.">
+<meta name="theme-color" content="#0b0d12">
+<meta property="og:title" content="Grid Groove">
+<meta property="og:description" content="76 synthesised instruments, 12 drum lanes, four patterns and a chain — all in one HTML file.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Crect x='5' y='7' width='7' height='6' rx='2' fill='%23ff3d81'/%3E%3Crect x='14' y='7' width='7' height='6' rx='2' fill='%23232a3b'/%3E%3Crect x='5' y='16' width='7' height='6' rx='2' fill='%23232a3b'/%3E%3Crect x='14' y='16' width='7' height='6' rx='2' fill='%2339d9ff'/%3E%3Crect x='23' y='7' width='4' height='15' rx='2' fill='%23e0aaff'/%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#0b0d12; --panel:#141824; --line:#232a3b; --text:#e6ebf5; --dim:#7c88a3;
@@ -75,7 +80,17 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
   .lane .nm{width:44px;font-size:10px}
   h1{font-size:16px;letter-spacing:3px}
 }
-footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+footer{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.frow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.flabel{color:var(--dim);font-size:10px;letter-spacing:2px;width:64px}
+.hint{color:var(--dim);font-size:10px;letter-spacing:1px}
+#help{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+#help summary{cursor:pointer;color:var(--dim);font-size:10px;letter-spacing:2px}
+#help summary:hover{color:var(--text)}
+.helpgrid{display:grid;grid-template-columns:120px 1fr;gap:8px 14px;margin-top:12px;font-size:11px;line-height:1.6}
+.helpgrid b{color:var(--hot);letter-spacing:1px}
+.helpgrid span{color:#b9c3d6}
+@media (max-width:700px){ .helpgrid{grid-template-columns:1fr;gap:2px 0} .helpgrid b{margin-top:8px} }
 #msg{color:var(--cool);font-size:11px;letter-spacing:1px}
 </style>
 </head>
@@ -110,18 +125,36 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 </section>
 
 <footer>
-  <select id="preset"></select>
-  <button id="rand">RANDOM</button>
-  <button id="clear">CLEAR</button>
-  <button id="share">COPY LINK</button>
-  <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> BARS</label>
-  <button id="wav">EXPORT WAV</button>
-  <input id="sname" placeholder="song name" maxlength="24">
-  <button id="ssave">SAVE</button>
-  <select id="slots"></select>
-  <button id="sdel">DELETE</button>
-  <span id="msg"></span>
-  <span style="color:var(--dim);font-size:10px;letter-spacing:1px">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo &middot; SHIFT+click M to solo</span>
+  <div class="frow">
+    <span class="flabel">PATTERN</span>
+    <select id="preset"></select>
+    <button id="rand">RANDOM</button>
+    <button id="clear">CLEAR</button>
+    <span id="msg"></span>
+  </div>
+  <div class="frow">
+    <span class="flabel">SONG</span>
+    <input id="sname" placeholder="song name" maxlength="24">
+    <button id="ssave">SAVE</button>
+    <select id="slots"></select>
+    <button id="sdel">DELETE</button>
+    <button id="share">COPY LINK</button>
+    <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> PASSES</label>
+    <button id="wav">EXPORT WAV</button>
+  </div>
+  <div class="frow hint">SPACE play &middot; 1-4 pattern &middot; CTRL+Z undo &middot; SHIFT+click M to solo &middot; click a note twice to accent it</div>
+  <details id="help">
+    <summary>WHAT EVERYTHING DOES</summary>
+    <div class="helpgrid">
+      <b>SONG</b><span>Four patterns, A to D. Click one to edit it. CHAIN is the order they play, so AAAB plays A three times then B. DUPLICATE copies the pattern you are on into the next slot; &lsaquo; &rsaquo; shift it a step; REVERSE plays it backwards. STEPS sets its length.</span>
+      <b>DRUMS</b><span>Click a cell to cycle off / on / accent. M mutes a lane, shift-click it to solo. KIT re-tunes the whole set: 808 is long and low, 909 is short and bright, LO-FI is dull, ACOUSTIC is tight.</span>
+      <b>INSTRUMENTS</b><span>Each track picks one of 76 voices, an octave, a note LENGTH in steps, a LEVEL, a TONE (a lowpass, for pushing a part back), and an ARP that turns a chord into an up, down or strummed figure. Faint cells are the notes on your other tracks.</span>
+      <b>KEY / SCALE</b><span>Every row is a scale degree, so notes cannot land wrong. Changing key or scale moves the whole song, patterns included.</span>
+      <b>FEEL</b><span>SWING pushes off-beat 16ths late. HUMAN jitters timing and loudness so the grid stops sounding like a grid.</span>
+      <b>SPACE / ECHO</b><span>Reverb, and a ping-pong delay locked to a dotted eighth of the tempo. Both sit on sends; drums go in quieter than instruments.</span>
+      <b>SAVING</b><span>Everything autosaves. COPY LINK puts the entire song in the URL. SAVE keeps up to 20 named songs in this browser. EXPORT WAV renders the chain to a file.</span>
+    </div>
+  </details>
 </footer>
 
 <script>
@@ -940,6 +973,13 @@ function buildMelodic(){
     sec.appendChild(row);
   }
 }
+function mapPattern(fn){
+  const pt=P();
+  DRUMS.forEach(d=>{ pt.drums[d.id]=fn(pt.drums[d.id]); });
+  pt.steps=pt.steps.map(fn); pt.accs=pt.accs.map(fn);
+  buildSong(); paint();
+}
+const rotate = n => a => a.map((_,i)=>a[(i - n + a.length*2) % a.length]);
 const patUsed = i => DRUMS.some(d=>state.pats[i].drums[d.id].some(Boolean)) ||
                      state.pats[i].steps.some(st=>st.some(Boolean));
 function buildSong(){
@@ -949,6 +989,9 @@ function buildSong(){
     PAT_NAMES.map((n,i)=>'<button class="tab'+(i===pat?' on':'')+(patUsed(i)?'':' empty')+
       '" data-pat="'+i+'" style="--c:var(--hot)">'+n+'</button>').join('')+
     '<button class="tab" id="dup">DUPLICATE &rarr;</button>'+
+    '<button class="tab" id="rotl" title="shift the pattern one step earlier">&lsaquo;</button>'+
+    '<button class="tab" id="rotr" title="shift the pattern one step later">&rsaquo;</button>'+
+    '<button class="tab" id="rev" title="play the pattern backwards">REVERSE</button>'+
     '<label>CHAIN <input id="chain" maxlength="16" value="'+
       state.chain.map(i=>PAT_NAMES[i]).join('')+'"></label>'+
     '<label>HUMAN <input id="human" type="range" min="0" max="100" value="'+state.human+'"></label>'+
@@ -1053,6 +1096,9 @@ document.body.addEventListener('click',e=>{
     state.tracks.push(blankTrack('piano',0,1)); syncPatternTracks();
     cur=state.tracks.length-1; ensureAudio(); build(); return;
   }
+  if(e.target.id==='rotl'){ mapPattern(rotate(-1)); msg('shifted &lt;'); return; }
+  if(e.target.id==='rotr'){ mapPattern(rotate(1));  msg('shifted &gt;'); return; }
+  if(e.target.id==='rev'){  mapPattern(a=>a.slice().reverse()); msg('reversed'); return; }
   const oct=e.target.closest('[data-oct]');
   if(oct){
     const tr=state.tracks[cur];
@@ -1454,6 +1500,9 @@ if(location.search.indexOf('test=1')>-1){
   const t=blankTrack('piano',0,1);
   eq(rowMidi(t,ROWS-1) < rowMidi(t,0),true,'rows ascend upward');
   eq(hex3(0xfff),'fff','mask packs');
+  eq(rotate(1)([1,2,3,4]),[4,1,2,3],'rotate right');
+  eq(rotate(-1)([1,2,3,4]),[2,3,4,1],'rotate left');
+  eq(rotate(1)(rotate(-1)([1,2,3,4])),[1,2,3,4],'rotating back and forth is a no-op');
   const withAcc=decode(encode(state));
   withAcc.pats[0].steps[0][0]=1<<5; withAcc.pats[0].accs[0][0]=1<<5;
   const encAcc=encode(withAcc);
