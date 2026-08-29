@@ -91,6 +91,8 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   <button id="rand">RANDOM</button>
   <button id="clear">CLEAR</button>
   <button id="share">COPY LINK</button>
+  <label>EXPORT <select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select> BARS</label>
+  <button id="wav">EXPORT WAV</button>
   <span id="msg"></span>
 </footer>
 
@@ -206,7 +208,10 @@ function upgradeV1(p){
 let ac, master, wetGain, sendMel, sendDrum, laneGain={}, trackGain=[], noiseBuf, ksCache={};
 function ensureAudio(){
   if(ac) return;
-  ac = new (window.AudioContext||window.webkitAudioContext)();
+  buildGraph(new (window.AudioContext||window.webkitAudioContext)());
+}
+function buildGraph(ctx){
+  ac = ctx;
   const comp = ac.createDynamicsCompressor();
   comp.threshold.value=-14; comp.ratio.value=4; comp.connect(ac.destination);
   // fixed headroom trim: the mix peaks well over 1.0 with pads + drums stacked
@@ -552,22 +557,25 @@ const queue=[];
 const stepDur = () => 60/state.bpm/4;
 function stepTime(base,i){ return i%2 ? base + stepDur()*(state.swing/100) : base; }
 
+function fireStep(i,t){
+  DRUMS.forEach(d=>{
+    const v = state.drums[d.id][i];
+    if(v && !state.mute[d.id]) hit(d.id,t,v===2?1:0.6);
+  });
+  state.tracks.forEach((tr,ti)=>{
+    const mask = tr.steps[i];
+    if(tr.mute || !mask || !trackGain[ti]) return;
+    const inst = INST[tr.inst] || INST.piano;
+    for(let r=0;r<ROWS;r++)
+      if(mask & (1<<r)) inst.play(trackGain[ti],t,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75*inst.k);
+  });
+}
 function scheduler(){
   // drain here too: rAF is frozen in a background tab, the queue must not grow forever
   while(queue.length && queue[0].t <= ac.currentTime) shown = queue.shift().step;
   while(nextTime < ac.currentTime + 0.12){
     const t = stepTime(nextTime,step);
-    DRUMS.forEach(d=>{
-      const v = state.drums[d.id][step];
-      if(v && !state.mute[d.id]) hit(d.id,t,v===2?1:0.6);
-    });
-    state.tracks.forEach((tr,ti)=>{
-      const mask = tr.steps[step];
-      if(tr.mute || !mask || !trackGain[ti]) return;
-      const inst = INST[tr.inst] || INST.piano;
-      for(let r=0;r<ROWS;r++)
-        if(mask & (1<<r)) inst.play(trackGain[ti],t,midiToFreq(rowMidi(tr,r)),stepDur()*tr.len,0.75*inst.k);
-    });
+    fireStep(step,t);
     queue.push({step:step,t:t});
     nextTime += stepDur();
     step = (step+1)%STEPS;
@@ -593,6 +601,47 @@ function draw(){
   document.querySelectorAll('.col-now').forEach(e=>e.classList.remove('col-now'));
   if(shown>=0) document.querySelectorAll('[data-step="'+shown+'"]').forEach(e=>e.classList.add('col-now'));
   requestAnimationFrame(draw);
+}
+
+/* ---------- render to wav ---------- */
+async function renderWav(bars){
+  stop();
+  const sd = 60/state.bpm/4, tail = 2.5;
+  const off = new OfflineAudioContext(2, Math.ceil(44100*(bars*STEPS*sd + tail)), 44100);
+  const live = {ac:ac,master:master,wetGain:wetGain,sendMel:sendMel,sendDrum:sendDrum,
+                laneGain:laneGain,trackGain:trackGain,noiseBuf:noiseBuf,ksCache:ksCache};
+  laneGain={}; trackGain=[]; ksCache={};
+  buildGraph(off);
+  for(let b=0;b<bars;b++) for(let i=0;i<STEPS;i++){
+    const base = (b*STEPS+i)*sd + 0.05;
+    fireStep(i, i%2 ? base + sd*(state.swing/100) : base);
+  }
+  let rendered;
+  try{ rendered = await off.startRendering(); }
+  finally{
+    ac=live.ac; master=live.master; wetGain=live.wetGain; sendMel=live.sendMel;
+    sendDrum=live.sendDrum; laneGain=live.laneGain; trackGain=live.trackGain;
+    noiseBuf=live.noiseBuf; ksCache=live.ksCache;
+  }
+  return rendered;
+}
+function wavBlob(buf){
+  const ch = buf.numberOfChannels, n = buf.length, bytes = 44 + n*ch*2;
+  const dv = new DataView(new ArrayBuffer(bytes));
+  const str = (off,s)=>{ for(let i=0;i<s.length;i++) dv.setUint8(off+i,s.charCodeAt(i)); };
+  str(0,'RIFF'); dv.setUint32(4,bytes-8,true); str(8,'WAVEfmt ');
+  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,ch,true);
+  dv.setUint32(24,buf.sampleRate,true); dv.setUint32(28,buf.sampleRate*ch*2,true);
+  dv.setUint16(32,ch*2,true); dv.setUint16(34,16,true);
+  str(36,'data'); dv.setUint32(40,n*ch*2,true);
+  const data = [];
+  for(let c=0;c<ch;c++) data.push(buf.getChannelData(c));
+  let off2 = 44;
+  for(let i=0;i<n;i++) for(let c=0;c<ch;c++){
+    const v = Math.max(-1,Math.min(1,data[c][i]));
+    dv.setInt16(off2, v<0 ? v*0x8000 : v*0x7fff, true); off2 += 2;
+  }
+  return new Blob([dv.buffer],{type:'audio/wav'});
 }
 
 /* ---------- ui ---------- */
@@ -755,6 +804,19 @@ $('share').onclick = ()=>{
   if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>msg('link copied'),()=>msg('url updated'));
   else msg('url updated');
 };
+$('wav').onclick = async e=>{
+  ensureAudio();
+  const btn=e.target; btn.disabled=true; btn.textContent='RENDERING...';
+  try{
+    const buf = await renderWav(+$('bars').value);
+    const url = URL.createObjectURL(wavBlob(buf));
+    const a = document.createElement('a');
+    a.href=url; a.download='grid-groove-'+state.bpm+'bpm.wav'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    msg('wav exported');
+  }catch(err){ msg('export failed: '+err.message); }
+  btn.disabled=false; btn.textContent='EXPORT WAV';
+};
 addEventListener('keydown',e=>{
   if(e.code==='Space' && e.target===document.body){ e.preventDefault(); playing?stop():start(); }
 });
@@ -882,6 +944,14 @@ if(location.search.indexOf('test=1')>-1){
   state.bpm=120; state.swing=50;
   eq(+stepTime(0,1).toFixed(4), +(stepDur()*0.5).toFixed(4),'swing offsets odd steps');
   eq(stepTime(0,2),0,'even steps stay on grid');
+  ensureAudio();
+  renderWav(1).then(buf=>{
+    const d=buf.getChannelData(0);
+    let peak=0; for(let i=0;i<d.length;i++) if(Math.abs(d[i])>peak) peak=Math.abs(d[i]);
+    if(peak<0.01) throw new Error('offline render came out silent');
+    if(ac.state==='closed') throw new Error('live context lost after render');
+    console.log('offline render ok, peak',peak.toFixed(3));
+  });
   msg('self-test passed');
   console.log('self-test passed');
 }
