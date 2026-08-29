@@ -32,7 +32,8 @@ button:hover{border-color:var(--hot)}
 #play.on{background:var(--hot);color:#0b0d12}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;overflow-x:auto}
 .legend{color:var(--dim);font-size:10px;letter-spacing:2px;margin-bottom:8px}
-.row{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;align-items:center;margin-bottom:4px;min-width:760px}
+.row{display:grid;grid-template-columns:150px repeat(var(--cols,16),1fr);gap:4px;align-items:center;margin-bottom:4px;
+  min-width:calc(150px + var(--cols,16) * 38px)}
 .lane{display:flex;gap:6px;align-items:center;font-size:11px;letter-spacing:1px}
 .lane .nm{width:52px;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
 .lane .mute{padding:2px 6px;font-size:10px;border-radius:4px}
@@ -47,7 +48,8 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 .cell.acc{background:var(--c);box-shadow:0 0 16px 0 var(--c);border-color:#ffffff66}
 .cell.hit{transform:scale(.88)}
 .col-now{outline:1px solid var(--cool);outline-offset:1px}
-.steps{display:grid;grid-template-columns:150px repeat(16,1fr);gap:4px;min-width:760px;margin-bottom:6px;color:var(--dim);font-size:10px;text-align:center}
+.steps{display:grid;grid-template-columns:150px repeat(var(--cols,16),1fr);gap:4px;
+  min-width:calc(150px + var(--cols,16) * 38px);margin-bottom:6px;color:var(--dim);font-size:10px;text-align:center}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
 .tab{padding:5px 10px;font-size:11px;border-radius:6px;background:#0f131d}
 .tab.on{border-color:var(--c);color:var(--c);box-shadow:0 0 12px -4px var(--c)}
@@ -106,7 +108,8 @@ footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 </footer>
 
 <script>
-const STEPS = 16, ROWS = 12;
+let STEPS = 16;                 // mirrors state.steps, set in load() and the LENGTH control
+const ROWS = 12, LENGTHS = [8,12,16,24,32];
 const DRUMS = [
   {id:'kick', nm:'KICK',   c:'#ff3d81'},
   {id:'snare',nm:'SNARE',  c:'#ffb703'},
@@ -139,12 +142,12 @@ const noteName = m => KEYS[((m%12)+12)%12] + (Math.floor(m/12)-1);
 /* ---------- state ---------- */
 const PATS = 4, PAT_NAMES = ['A','B','C','D'];
 const blankTrack = (inst,oct,len) => ({inst:inst,oct:oct,len:len,mute:0,vol:0.8});
-const blankPat = (nTracks) => ({
-  drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(STEPS).fill(0)])),
-  steps:Array.from({length:nTracks},()=>new Array(STEPS).fill(0))
+const blankPat = (nTracks,n) => ({
+  drums:Object.fromEntries(DRUMS.map(d=>[d.id,new Array(n||STEPS).fill(0)])),
+  steps:Array.from({length:nTracks},()=>new Array(n||STEPS).fill(0))
 });
 const blank = () => ({
-  bpm:112, swing:16, vol:80, wet:28, echo:18, key:0, scale:0, chain:[0],
+  bpm:112, swing:16, vol:80, wet:28, echo:18, key:0, scale:0, chain:[0], steps:STEPS,
   mute:Object.fromEntries(DRUMS.map(d=>[d.id,0])),
   gain:Object.fromEntries(DRUMS.map(d=>[d.id,0.8])),
   tracks:[blankTrack('bass',-1,1.5), blankTrack('piano',0,1), blankTrack('strings',1,4)],
@@ -174,17 +177,18 @@ function nearestRow(tr,midi){
 /* ---------- pattern string (URL hash + localStorage) ---------- */
 const hex3 = n => ('00'+(n&0xfff).toString(16)).slice(-3);
 const clamp = (v,lo,hi,dflt) => isNaN(v) ? dflt : Math.min(hi,Math.max(lo,v));
-const EMPTY_LANE = '0'.repeat(STEPS);
+const emptyLane = () => '0'.repeat(STEPS);
 function encode(s){
   const kit = s.tracks.map(tr=>[tr.inst,tr.oct,Math.round(tr.len*4),tr.mute,Math.round(tr.vol*99)].join(':')).join(';');
   // trailing empties are dropped and refilled on decode: a one-pattern song
   // should not carry three empty ones around in the URL
   const pats = s.pats.map(pt=>{
     const lanes = DRUMS.map(d=>pt.drums[d.id].join(''));
-    while(lanes.length>1 && lanes[lanes.length-1]===EMPTY_LANE) lanes.pop();
+    while(lanes.length>1 && lanes[lanes.length-1]===emptyLane()) lanes.pop();
     return lanes.join(',') + '~' + pt.steps.map(st=>st.map(hex3).join('')).join(';');
   });
-  const empty = EMPTY_LANE + '~' + s.tracks.map(()=>'000'.repeat(STEPS)).join(';');
+  const empty = '0'.repeat(s.pats[0].drums.kick.length) + '~' +
+                s.tracks.map(()=>'000'.repeat(s.pats[0].drums.kick.length)).join(';');
   while(pats.length>1 && pats[pats.length-1]===empty) pats.pop();
   return ['v3',s.bpm,s.swing,s.key,s.scale,s.wet,s.chain.join(''),kit,pats.join('/'),s.echo].join('|');
 }
@@ -203,15 +207,17 @@ function decode(str){
   s.chain = readChain(p[6]);
   s.tracks = p[7].split(';').filter(Boolean).map(readTrack);
   if(!s.tracks.length) s.tracks = blank().tracks;
+  const first = p[8].split('/')[0].split('~');
+  s.steps = clamp((first[0]||'').split(',')[0].length, 4, 32, 16);
   s.pats = p[8].split('/').slice(0,PATS).map(chunk=>{
-    const half = chunk.split('~'), pt = blankPat(s.tracks.length);
-    readDrums(pt,half[0]);
+    const half = chunk.split('~'), pt = blankPat(s.tracks.length,s.steps);
+    readDrums(pt,half[0],s.steps);
     (half[1]||'').split(';').forEach((st,i)=>{
-      if(i<pt.steps.length) pt.steps[i] = readSteps(st);
+      if(i<pt.steps.length) pt.steps[i] = readSteps(st,s.steps);
     });
     return pt;
   });
-  while(s.pats.length < PATS) s.pats.push(blankPat(s.tracks.length));
+  while(s.pats.length < PATS) s.pats.push(blankPat(s.tracks.length,s.steps));
   return s;
 }
 function readTrack(chunk){
@@ -221,15 +227,15 @@ function readTrack(chunk){
   tr.vol  = clamp(+f[4],0,99,79)/99;
   return tr;
 }
-const readSteps = st => Array.from({length:STEPS},(_,i)=>(parseInt(String(st).substr(i*3,3),16)|0) & 0xfff);
+const readSteps = (st,n) => Array.from({length:n||STEPS},(_,i)=>(parseInt(String(st).substr(i*3,3),16)|0) & 0xfff);
 function readChain(str){
   const c = String(str).split('').map(Number).filter(n=>n>=0 && n<PATS);
   return c.length ? c : [0];
 }
-function readDrums(pt,str){
+function readDrums(pt,str,n){
   String(str).split(',').forEach((lane,i)=>{
     if(!DRUMS[i]) return;
-    pt.drums[DRUMS[i].id] = Array.from({length:STEPS},(_,j)=>{
+    pt.drums[DRUMS[i].id] = Array.from({length:n||STEPS},(_,j)=>{
       const v = +lane[j]; return v===1||v===2 ? v : 0;
     });
   });
@@ -814,9 +820,14 @@ function buildSong(){
     '<button class="tab" id="dup">DUPLICATE &rarr;</button>'+
     '<label>CHAIN <input id="chain" maxlength="16" value="'+
       state.chain.map(i=>PAT_NAMES[i]).join('')+'"></label>'+
+    '<label>STEPS <select id="slen">'+LENGTHS.map(n=>
+      '<option value="'+n+'"'+(n===STEPS?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
     '</div>';
 }
-function build(){ buildSong(); buildDrums(); buildMelodic(); syncTrackGains(); paint(); }
+function build(){
+  document.body.style.setProperty('--cols',STEPS);
+  buildSong(); buildDrums(); buildMelodic(); syncTrackGains(); paint();
+}
 function paint(){
   const pt=P();
   document.querySelectorAll('[data-lane]').forEach(c=>{
@@ -924,7 +935,22 @@ document.body.addEventListener('input',e=>{
   }
 });
 document.body.addEventListener('change',e=>{
-  if(e.target.id==='instSel'){ state.tracks[cur].inst=e.target.value; buildMelodic(); paint(); }
+  if(e.target.id==='instSel'){
+    state.tracks[cur].inst=e.target.value; buildMelodic(); paint();
+    ensureAudio();                                   // audition the new sound
+    const tr=state.tracks[cur], ins=INST[tr.inst];
+    ins.play(trackGain[cur],ac.currentTime+0.02,midiToFreq(rowMidi(tr,ROWS-1)),0.6,0.75*ins.k);
+    return;
+  }
+  if(e.target.id==='slen'){
+    const n=+e.target.value, fit=(a)=>Array.from({length:n},(_,i)=>a[i]||0);
+    state.steps=STEPS=n;
+    state.pats.forEach(pt=>{
+      DRUMS.forEach(d=>{ pt.drums[d.id]=fit(pt.drums[d.id]); });
+      pt.steps=pt.steps.map(fit);
+    });
+    build(); msg(n+' steps');
+  }
 });
 
 $('play').onclick = ()=> playing?stop():start();
@@ -976,7 +1002,7 @@ function load(str){
   const s=decode(str) || decode(PRESETS.house);
   const wasPlaying=playing;
   s.vol=state.vol; s.mute=state.mute; s.gain=state.gain;
-  state=s;
+  state=s; STEPS=state.steps;
   cur=Math.min(cur,state.tracks.length-1);
   pat=Math.min(pat,PATS-1); chainPos=0;
   if(ac){ trackGain.forEach(g=>g.disconnect()); }
@@ -1115,6 +1141,11 @@ if(location.search.indexOf('test=1')>-1){
            '|piano:0:4:0:79:'+'000'.repeat(15)+'800';
   eq(decode(v2).pats[0].steps[0][15],0x800,'v2 notes survive');
   eq(readChain('0012'),[0,0,1,2],'chain parses');
+  const long=decode(encode(state)); long.steps=32;
+  long.pats.forEach(pt=>{ DRUMS.forEach(d=>{ while(pt.drums[d.id].length<32) pt.drums[d.id].push(0); });
+    pt.steps=pt.steps.map(st=>{ const a=st.slice(); while(a.length<32) a.push(0); return a; }); });
+  eq(decode(encode(long)).steps,32,'step count survives the round trip');
+  eq(decode(encode(long)).pats[0].drums.kick.length,32,'lanes resize with it');
   eq(readChain('zz'),[0],'bad chain falls back to A');
   eq(decode(PRESETS.house).chain,[0,0,0,1],'preset chain');
   eq(decode(PRESETS.house.split('|').slice(0,9).join('|')).echo,18,'v3 without echo field defaults');
